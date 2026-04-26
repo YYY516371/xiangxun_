@@ -124,6 +124,10 @@ const handleCommand = (command) => {
   --transition-default: all 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1);
 }
 
+html {
+  overflow-y: scroll;
+}
+
 /* 平滑滚动 */
 html {
   scroll-behavior: smooth;

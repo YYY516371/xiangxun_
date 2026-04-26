@@ -302,7 +302,7 @@ const renderPieChart = () => {
     series: [{
       type: 'pie',
       radius: '55%',
-      center: ['70%', '50%'],
+      center: ['50%', '50%'],
       data: industryStats.value,
       label: {
         show: true,
@@ -449,6 +449,8 @@ onMounted(() => {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
 }
 .header {
   display: flex;
@@ -472,11 +474,33 @@ onMounted(() => {
   color: #5a3e2b;
 }
 .stats-row {
-  margin-bottom: 24px;
+ display: flex;
+  flex-wrap: wrap;
+}
+.stats-row .el-col {
+  display: flex;
+  flex-direction: column;
+}
+.chart-card, .top-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+/* 卡片内容区域使用 flex 列布局，并占满高度 */
+.chart-card :deep(.el-card__body),
+.top-card :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 .pie-chart {
-  width: 100%;
-  height: 300px;
+ flex: 1;
+  min-height: 280px;
+}
+/* 调整表格区域，使其不溢出 */
+.top-card .el-table {
+  flex: 1;
+  overflow: auto;
 }
 .top-card .no-data {
   text-align: center;
