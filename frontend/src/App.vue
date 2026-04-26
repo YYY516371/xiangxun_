@@ -14,6 +14,7 @@
           </span>
           <template #dropdown>
             <el-dropdown-menu>
+              <el-dropdown-item command="profile">个人中心</el-dropdown-item>
               <el-dropdown-item command="logout">退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -40,7 +41,9 @@ const userStore = useUserStore()
 const router = useRouter()
 
 const handleCommand = (command) => {
-  if (command === 'logout') {
+  if (command === 'profile') {
+    router.push('/person')
+  } else if (command === 'logout') {
     userStore.logout()
     ElMessage.success('已退出登录')
     router.push('/')
@@ -63,6 +66,11 @@ const handleCommand = (command) => {
   --card-hover-shadow: 0 20px 30px -12px rgba(43, 94, 43, 0.15);
   --nav-bg: rgba(43, 94, 43, 0.92);
   --transition-default: all 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+}
+
+/* 平滑滚动（已从 script 移至此） */
+html {
+  scroll-behavior: smooth;
 }
 
 /* ========== 基础重置 ========== */

@@ -1,12 +1,22 @@
 <template>
   <div class="home">
     <div class="hero">
-      <img src="https://picsum.photos/id/15/1200/400" alt="乡村封面" class="hero-img" />
-      <div class="hero-text">
-        <h1>一村一品 · 特色乡村数字地图</h1>
-        <p>探索全国示范村，发现乡土好物</p>
+  <video autoplay muted loop playsinline class="hero-video">
+    <source src="/village.mp4" type="video/mp4">
+    您的浏览器不支持视频播放。
+  </video>
+  <div class="hero-text">
+    <h1>一村一品 · 特色乡村数字地图</h1>
+    <p>探索全国示范村，发现乡土好物</p>
+  </div>
+</div>
+   <!-- 向下滚动提示（可选） -->
+      <div class="scroll-hint" @click="scrollToMap">
+        <el-icon><ArrowDown /></el-icon>
       </div>
     </div>
+    <!-- 地图切换按钮和地图容器（后续内容） -->
+    <div class="map-section">
 
     <!-- 产业选择器（仅产业分布图显示） -->
     <div v-if="activeMap === 'industry'" class="industry-selector">
@@ -66,6 +76,7 @@ import { useRouter } from 'vue-router'
 import axios from 'axios'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { ArrowDown } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const activeMap = ref('industry')
@@ -78,6 +89,13 @@ let currentGeoJsonLayer = null
 const provinceIndustryStats = ref([])   // [{ province: '北京市', 茶:2, ... }]
 const provinceCountStats = ref([])      // [{ province: '北京市', count: 46 }]
 const predefinedIndustries = ['茶', '果', '药', '渔', '蔬', '花', '畜', '粮']
+
+const scrollToMap = () => {
+  const mapSection = document.querySelector('.map-section')
+  if (mapSection) {
+    mapSection.scrollIntoView({ behavior: 'smooth' })
+  }
+}
 
 // ==================== 天地图配置 ====================
 // 请替换为你的天地图 API Key
@@ -116,60 +134,69 @@ const getCountColor = (value, maxValue) => {
 // ==================== 数据加载与聚合 ====================
 const loadStatistics = async () => {
   try {
-    const res = await axios.get('/api/villages')
-    const allVillages = res.data
-    console.log(`成功加载 ${allVillages.length} 条村庄数据`)
-
-    // 1. 各省各产业数量
-    const industryMap = new Map()
+    const res = await axios.get('/api/villages');
+    console.log('原始响应数据类型:', Array.isArray(res.data) ? '数组' : typeof res.data);
+    if (!Array.isArray(res.data)) {
+      throw new Error('后端返回的不是数组');
+    }
+    const allVillages = res.data;
+    console.log('实际村庄数据条数:', allVillages.length);
+    
+    // 数据量异常检测
+    if (allVillages.length > 5000) {
+      console.warn('数据量异常（超过5000），使用模拟数据');
+      throw new Error('数据量过大');
+    }
+    
+    // ========== 产业统计 ==========
+    const industryMap = new Map();
+    const predefinedIndustries = ['茶', '果', '药', '渔', '蔬', '花', '畜', '粮'];
     for (const v of allVillages) {
-      const province = v.province
-      if (!province) continue
+      const province = v.province;
+      if (!province) continue;
       if (!industryMap.has(province)) {
         industryMap.set(province, {
           province,
           茶: 0, 果: 0, 药: 0, 渔: 0, 蔬: 0, 花: 0, 畜: 0, 粮: 0, 其他: 0,
-        })
+        });
       }
-      const stats = industryMap.get(province)
-      let ind = v.industry_type
+      const stats = industryMap.get(province);
+      let ind = v.industry_type;
       if (!ind || !predefinedIndustries.includes(ind)) {
-        stats.其他 += 1
+        stats.其他 += 1;
       } else {
-        stats[ind] += 1
+        stats[ind] += 1;
       }
     }
-    provinceIndustryStats.value = Array.from(industryMap.values())
-
-    // 2. 各省村庄总数
-    const countMap = new Map()
+    provinceIndustryStats.value = Array.from(industryMap.values());
+    
+    // ========== 总数统计 ==========
+    const countMap = new Map();
     for (const v of allVillages) {
-      const province = v.province
+      const province = v.province;
       if (province) {
-        countMap.set(province, (countMap.get(province) || 0) + 1)
+        countMap.set(province, (countMap.get(province) || 0) + 1);
       }
     }
     provinceCountStats.value = Array.from(countMap.entries()).map(([province, count]) => ({
       province,
       count,
-    }))
-
-    refreshMapLayer()
+    }));
+    
+    console.log('产业统计结果：', provinceIndustryStats.value);
+    console.log('总数统计结果：', provinceCountStats.value);
+    
+    refreshMapLayer();
   } catch (error) {
-    console.error('加载村庄数据失败，使用模拟数据', error)
-    // 模拟数据（示例）
+    console.error('加载失败，使用模拟数据', error);
+    // 模拟数据（仅用于测试）
     provinceIndustryStats.value = [
       { province: '北京市', 茶: 2, 果: 15, 药: 1, 渔: 0, 蔬: 8, 花: 3, 畜: 1, 粮: 2, 其他: 0 },
-      { province: '天津市', 茶: 0, 果: 12, 药: 2, 渔: 1, 蔬: 10, 花: 2, 畜: 2, 粮: 1, 其他: 0 },
-      { province: '上海市', 茶: 1, 果: 8, 药: 0, 渔: 2, 蔬: 5, 花: 4, 畜: 0, 粮: 0, 其他: 0 },
-    ]
-    provinceCountStats.value = provinceIndustryStats.value.map(p => ({
-      province: p.province,
-      count: Object.values(p).reduce((sum, val) => sum + (typeof val === 'number' ? val : 0), 0),
-    }))
-    refreshMapLayer()
+    ];
+    provinceCountStats.value = [{ province: '北京市', count: 46 }];
+    refreshMapLayer();
   }
-}
+};
 
 // ==================== 获取当前地图模式下的数值 ====================
 const getCurrentProvinceValues = () => {
@@ -315,26 +342,40 @@ watch([activeMap, selectedIndustry], () => {
 .hero {
   position: relative;
   width: 100%;
-  height: 300px;
-  overflow: hidden;
-  border-radius: 0 0 32px 32px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+  height: 100vh;             
+  
 }
-.hero-img {
+.hero-video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: cover;         /* 保持比例，裁剪边缘 */
 }
 .hero-text {
   position: absolute;
-  bottom: 30px;
-  left: 30px;
+  bottom: 20%;
+  left: 10%;
+  right: 10%;
+  text-align: center;
   color: white;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(4px);
-  padding: 12px 24px;
-  border-radius: 60px;
+  text-shadow: 2px 2px 8px rgba(0,0,0,0.5);
+  z-index: 2;
+}
+
+.scroll-hint {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: white;
+  font-size: 24px;
+  animation: bounce 2s infinite;
+  cursor: pointer;
+  z-index: 2;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(10px); }
 }
 
 .industry-selector {

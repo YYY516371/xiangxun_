@@ -76,20 +76,39 @@
 </div>
 
     <!-- 村庄卡片网格 -->
-    <el-row :gutter="20">
-      <el-col :span="12" v-for="v in paginatedVillages" :key="v.id" style="margin-bottom: 20px;">
-        <el-card class="village-card" @click="goDetail(v.id)">
-          <div class="card-content">
-            <img src="https://picsum.photos/id/104/150/150" class="village-img" />
-            <div class="info">
-              <h3>{{ simplifyName(v.name) }}</h3>
-              <p class="product">{{ v.product_name || '特色产品' }}</p>
-              <p class="location">{{ v.city }} · {{ v.county || '' }}</p>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+  <el-row :gutter="20">
+  <el-col :span="12" v-for="v in paginatedVillages" :key="v.id" style="margin-bottom: 20px;">
+    <el-card class="village-card">
+      <!-- 卡片主体（点击跳转详情） -->
+      <div class="card-content" @click="goDetail(v.id)">
+        <img :src="v.image_url || defaultImage" class="village-img" />
+        <div class="info">
+          <h3>{{ simplifyName(v.name) }}</h3>
+          <p class="product">{{ v.product_name || '特色产品' }}</p>
+          <p class="location">{{ v.city }} · {{ v.county || '' }}</p>
+        </div>
+      </div>
+
+      <!-- 百科链接按钮组 -->
+      <div class="baike-buttons">
+        <el-button link type="primary" size="small" @click.stop="openBaike(v, 0)">
+          📖 村庄简介
+        </el-button>
+        <el-button link type="success" size="small" @click.stop="openBaike(v, 1)">
+          🛒 产品介绍
+        </el-button>
+      </div>
+
+      <!-- 收藏图标 -->
+      <div class="card-footer">
+        <el-icon class="favorite-icon" :color="isFavorited(v.id) ? '#f56c6c' : '#999'" @click.stop="toggleFavorite(v.id)">
+          <StarFilled v-if="isFavorited(v.id)" />
+          <Star v-else />
+        </el-icon>
+      </div>
+    </el-card>
+  </el-col>
+</el-row>
 
     <div class="pagination-row">
   <el-pagination
@@ -127,6 +146,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import axios from 'axios'
+import { Star, StarFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,6 +163,8 @@ const displayIndustryName = computed(() => {
 })
 
 const allVillages = ref([])
+// 响应式收藏列表
+const favoriteIds = ref([])
 
 // 筛选状态
 const selectedIndustryType = ref('')
@@ -224,6 +246,44 @@ const simplifyName = (fullName) => {
   const townIdx = name.indexOf('镇')
   if (townIdx !== -1) name = name.substring(townIdx + 1)
   return name || fullName
+}
+
+// 解析 baike_urls 字段，返回链接数组
+const parseBaikeUrls = (urls) => {
+  if (!urls || urls === 'NaN') return []
+  // 按逗号或竖线分割
+  const splitUrls = urls.split(/[,|]/).map(u => u.trim())
+  return splitUrls.filter(u => u.startsWith('http'))
+}
+
+// 判断是否已收藏
+const isFavorited = (id) => {
+  return favoriteIds.value.includes(id)
+}
+
+// 切换收藏
+const toggleFavorite = (id) => {
+  const index = favoriteIds.value.indexOf(id)
+  if (index !== -1) {
+    favoriteIds.value.splice(index, 1)   // 移除
+    ElMessage.success('已取消收藏')
+  } else {
+    favoriteIds.value.push(id)           // 添加
+    ElMessage.success('已添加收藏')
+  }
+  // 同步到 localStorage
+  localStorage.setItem('favoriteVillages', JSON.stringify(favoriteIds.value))
+}
+
+// 打开百度百科（index: 0=村庄简介，1=产品介绍）
+const openBaike = (village, index) => {
+  const urls = parseBaikeUrls(village.baike_urls)
+  const url = urls[index]
+  if (url) {
+    window.open(url, '_blank')
+  } else {
+    ElMessage.warning(index === 0 ? '暂无村庄简介' : '暂无产品介绍')
+  }
 }
 
 // 构建区域筛选选项（城市 → 区 → 镇）
@@ -444,7 +504,13 @@ onMounted(() => {
   window.addEventListener('resize', () => {
     pieChart?.resize()
   })
+  const loadFavorites = () => {
+  const favs = JSON.parse(localStorage.getItem('favoriteVillages') || '[]')
+  favoriteIds.value = favs
+}
 })
+
+
 
 // 监听数据变化重新渲染饼图和TOP10（仅在区域模式）
 watch(allVillages, () => {
@@ -549,5 +615,26 @@ watch(allVillages, () => {
   .header h1 { font-size: 1.4rem; }
   .village-img { width: 70px; height: 70px; }
   .pie-chart { height: 200px; }
+}
+
+.baike-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 8px;
+  padding: 0 12px;
+}
+.card-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+}
+.favorite-icon {
+  font-size: 24px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.favorite-icon:hover {
+  transform: scale(1.1);
 }
 </style>

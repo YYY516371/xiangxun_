@@ -48,18 +48,37 @@
     <!-- 村庄卡片网格 -->
     <el-row :gutter="20">
       <el-col :span="12" v-for="v in paginatedVillages" :key="v.id" style="margin-bottom: 20px;">
-        <el-card class="village-card" @click="goDetail(v.id)">
-          <div class="card-content">
-            <img src="https://picsum.photos/id/104/150/150" class="village-img" />
-            <div class="info">
-              <h3>{{ simplifyName(v.name) }}</h3>
-              <p class="product">{{ v.product_name || '特色产品' }}</p>
-              <p class="location">{{ v.province }} · {{ v.city }} · {{ v.county || '' }}</p>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+        <el-card class="village-card">
+  <!-- 卡片主体（点击跳转详情） -->
+  <div class="card-content" @click="goDetail(v.id)">
+    <img :src="v.image_url || 'https://picsum.photos/id/104/150/150'" class="village-img" />
+    <div class="info">
+      <h3>{{ simplifyName(v.name) }}</h3>
+      <p class="product">{{ v.product_name || '特色产品' }}</p>
+      <p class="location">{{ v.city }} · {{ v.county || '' }}</p>
+    </div>
+  </div>
+
+  <!-- 新增：百科链接按钮组 -->
+  <div class="baike-buttons">
+    <el-button link type="primary" size="small" @click.stop="openBaike(v, 0)">
+      📖 村庄简介
+    </el-button>
+    <el-button link type="success" size="small" @click.stop="openBaike(v, 1)">
+      🛒 产品介绍
+    </el-button>
+  </div>
+
+  <!-- 新增：收藏图标 -->
+  <div class="card-footer">
+    <el-icon class="favorite-icon" :color="isFavorited(v.id) ? '#f56c6c' : '#999'" @click.stop="toggleFavorite(v.id)">
+      <StarFilled v-if="isFavorited(v.id)" />
+      <Star v-else />
+     </el-icon>
+   </div>
+  </el-card>
+ </el-col>
+</el-row>
 
     <!-- 分页组件 -->
     <div class="pagination-row">
@@ -82,6 +101,8 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
+import { ElMessage } from 'element-plus'
+import { Star, StarFilled } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
@@ -90,6 +111,8 @@ const predefinedIndustries = ['茶', '果', '药', '渔', '蔬', '花', '畜', '
 
 const allVillages = ref([])
 const usingMockData = ref(false)
+// 响应式收藏列表
+const favoriteIds = ref([])
 
 // 筛选状态
 const selectedIndustry = ref('')
@@ -121,6 +144,46 @@ const simplifyName = (fullName) => {
   const townIdx = name.indexOf('镇')
   if (townIdx !== -1) name = name.substring(townIdx + 1)
   return name || fullName
+}
+
+
+
+// 解析 baike_urls 字段，返回链接数组
+const parseBaikeUrls = (urls) => {
+  if (!urls || urls === 'NaN') return []
+  // 按逗号或竖线分割
+  const splitUrls = urls.split(/[,|]/).map(u => u.trim())
+  return splitUrls.filter(u => u.startsWith('http'))
+}
+
+// 判断是否已收藏
+const isFavorited = (id) => {
+  return favoriteIds.value.includes(id)
+}
+
+// 切换收藏
+const toggleFavorite = (id) => {
+  const index = favoriteIds.value.indexOf(id)
+  if (index !== -1) {
+    favoriteIds.value.splice(index, 1)   // 移除
+    ElMessage.success('已取消收藏')
+  } else {
+    favoriteIds.value.push(id)           // 添加
+    ElMessage.success('已添加收藏')
+  }
+  // 同步到 localStorage
+  localStorage.setItem('favoriteVillages', JSON.stringify(favoriteIds.value))
+}
+
+// 打开百度百科（index: 0=村庄简介，1=产品介绍）
+const openBaike = (village, index) => {
+  const urls = parseBaikeUrls(village.baike_urls)
+  const url = urls[index]
+  if (url) {
+    window.open(url, '_blank')
+  } else {
+    ElMessage.warning(index === 0 ? '暂无村庄简介' : '暂无产品介绍')
+  }
 }
 
 // 构建全国地区级联选项（省 → 市 → 区/镇）
@@ -283,11 +346,71 @@ const goDetail = (id) => router.push(`/village/${id}`)
 
 onMounted(() => {
   loadVillages()
+  const loadFavorites = () => {
+  const favs = JSON.parse(localStorage.getItem('favoriteVillages') || '[]')
+  favoriteIds.value = favs
+}
 })
 </script>
 
 <style scoped>
-/* 原有样式保持不变，新增如下 */
+.village-card {
+  cursor: pointer;
+  transition: all 0.25s ease;
+  border-radius: 24px;
+  overflow: hidden;
+  background: rgba(255, 255, 245, 0.8);
+  backdrop-filter: blur(4px);
+}
+.village-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 20px 30px -12px rgba(43, 94, 43, 0.15);
+}
+.card-content {
+  display: flex;
+  gap: 16px;
+  padding: 12px;
+}
+.village-img {
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 16px;
+}
+.info h3 {
+  margin: 0 0 5px;
+  font-size: 1.2rem;
+  color: #2b5e2b;
+}
+.product {
+  color: #e67e22;
+  font-weight: bold;
+  margin: 5px 0;
+}
+.location {
+  font-size: 12px;
+  color: #888;
+}
+.baike-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 8px;
+  padding: 0 12px;
+}
+.card-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+}
+.favorite-icon {
+  font-size: 22px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.favorite-icon:hover {
+  transform: scale(1.1);
+}
 .search-row {
   text-align: center;
   margin-bottom: 12px;
@@ -297,5 +420,4 @@ onMounted(() => {
   justify-content: center;
   margin-top: 20px;
 }
-/* 其余原有样式保持 */
 </style>
