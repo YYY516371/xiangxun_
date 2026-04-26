@@ -34,51 +34,40 @@
       />
     </div>
 
-    <!-- 搜索框 -->
-    <div class="search-row">
-      <el-input
-        v-model="searchKeyword"
-        placeholder="搜索村庄或产品"
-        clearable
-        prefix-icon="Search"
-        style="width: 300px; margin-bottom: 16px;"
-      />
-    </div>
-
     <!-- 村庄卡片网格 -->
     <el-row :gutter="20">
       <el-col :span="12" v-for="v in paginatedVillages" :key="v.id" style="margin-bottom: 20px;">
         <el-card class="village-card">
-  <!-- 卡片主体（点击跳转详情） -->
-  <div class="card-content" @click="goDetail(v.id)">
-    <img :src="v.image_url || 'https://picsum.photos/id/104/150/150'" class="village-img" />
-    <div class="info">
-      <h3>{{ simplifyName(v.name) }}</h3>
-      <p class="product">{{ v.product_name || '特色产品' }}</p>
-      <p class="location">{{ v.city }} · {{ v.county || '' }}</p>
-    </div>
-  </div>
+          <!-- 卡片主体（点击跳转详情） -->
+          <div class="card-content" @click="goDetail(v.id)">
+            <img :src="v.image_url || defaultImage" class="village-img" />
+            <div class="info">
+              <h3>{{ simplifyName(v.name) }}</h3>
+              <p class="product">{{ v.product_name || '特色产品' }}</p>
+              <p class="location">{{ v.city }} · {{ v.county || '' }}</p>
+            </div>
+          </div>
 
-  <!-- 新增：百科链接按钮组 -->
-  <div class="baike-buttons">
-    <el-button link type="primary" size="small" @click.stop="openBaike(v, 0)">
-      📖 村庄简介
-    </el-button>
-    <el-button link type="success" size="small" @click.stop="openBaike(v, 1)">
-      🛒 产品介绍
-    </el-button>
-  </div>
+          <!-- 百科链接按钮组 -->
+          <div class="baike-buttons">
+            <el-button link type="primary" size="small" @click.stop="openBaike(v, 0)">
+              📖 村庄简介
+            </el-button>
+            <el-button link type="success" size="small" @click.stop="openBaike(v, 1)">
+              🛒 产品介绍
+            </el-button>
+          </div>
 
-  <!-- 新增：收藏图标 -->
-  <div class="card-footer">
-    <el-icon class="favorite-icon" :color="isFavorited(v.id) ? '#f56c6c' : '#999'" @click.stop="toggleFavorite(v.id)">
-      <StarFilled v-if="isFavorited(v.id)" />
-      <Star v-else />
-     </el-icon>
-   </div>
-  </el-card>
- </el-col>
-</el-row>
+          <!-- 收藏图标 -->
+          <div class="card-footer">
+            <el-icon class="favorite-icon" :color="isFavorited(v.id) ? '#f56c6c' : '#999'" @click.stop="toggleFavorite(v.id)">
+              <StarFilled v-if="isFavorited(v.id)" />
+              <Star v-else />
+            </el-icon>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
 
     <!-- 分页组件 -->
     <div class="pagination-row">
@@ -86,14 +75,14 @@
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
         :page-sizes="[6, 12, 18, 24]"
-        :total="searchedVillages.length"
+        :total="filteredVillages.length"
         layout="total, sizes, prev, pager, next"
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
       />
     </div>
 
-    <div v-if="searchedVillages.length === 0" class="empty">暂无村庄数据</div>
+    <div v-if="filteredVillages.length === 0" class="empty">暂无村庄数据</div>
   </div>
 </template>
 
@@ -106,13 +95,11 @@ import { Star, StarFilled } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
-// 预设产业列表（用于“其他”归类）
 const predefinedIndustries = ['茶', '果', '药', '渔', '蔬', '花', '畜', '粮']
-
 const allVillages = ref([])
 const usingMockData = ref(false)
-// 响应式收藏列表
 const favoriteIds = ref([])
+const defaultImage = 'https://picsum.photos/id/104/150/150'
 
 // 筛选状态
 const selectedIndustry = ref('')
@@ -120,12 +107,11 @@ const selectedSubCategory = ref('')
 const selectedRegion = ref([])
 const regionOptions = ref([])
 
-// 搜索和分页
-const searchKeyword = ref('')
+// 分页
 const currentPage = ref(1)
 const pageSize = ref(6)
 
-// 从村庄 name 中提取区、镇
+// 辅助函数
 const parseDistrictTown = (fullName) => {
   let district = null, town = null
   const districtMatch = fullName.match(/(.+?区)/)
@@ -135,7 +121,6 @@ const parseDistrictTown = (fullName) => {
   return { district, town }
 }
 
-// 简化村名
 const simplifyName = (fullName) => {
   if (!fullName) return ''
   let name = fullName
@@ -146,47 +131,31 @@ const simplifyName = (fullName) => {
   return name || fullName
 }
 
-
-
-// 解析 baike_urls 字段，返回链接数组
 const parseBaikeUrls = (urls) => {
   if (!urls || urls === 'NaN') return []
-  // 按逗号或竖线分割
-  const splitUrls = urls.split(/[,|]/).map(u => u.trim())
-  return splitUrls.filter(u => u.startsWith('http'))
+  return urls.split(/[,|]/).map(u => u.trim()).filter(u => u.startsWith('http'))
 }
 
-// 判断是否已收藏
-const isFavorited = (id) => {
-  return favoriteIds.value.includes(id)
-}
-
-// 切换收藏
+const isFavorited = (id) => favoriteIds.value.includes(id)
 const toggleFavorite = (id) => {
   const index = favoriteIds.value.indexOf(id)
   if (index !== -1) {
-    favoriteIds.value.splice(index, 1)   // 移除
+    favoriteIds.value.splice(index, 1)
     ElMessage.success('已取消收藏')
   } else {
-    favoriteIds.value.push(id)           // 添加
+    favoriteIds.value.push(id)
     ElMessage.success('已添加收藏')
   }
-  // 同步到 localStorage
   localStorage.setItem('favoriteVillages', JSON.stringify(favoriteIds.value))
 }
 
-// 打开百度百科（index: 0=村庄简介，1=产品介绍）
 const openBaike = (village, index) => {
   const urls = parseBaikeUrls(village.baike_urls)
   const url = urls[index]
-  if (url) {
-    window.open(url, '_blank')
-  } else {
-    ElMessage.warning(index === 0 ? '暂无村庄简介' : '暂无产品介绍')
-  }
+  if (url) window.open(url, '_blank')
+  else ElMessage.warning(index === 0 ? '暂无村庄简介' : '暂无产品介绍')
 }
 
-// 构建全国地区级联选项（省 → 市 → 区/镇）
 const buildRegionOptions = () => {
   const provinceMap = new Map()
   allVillages.value.forEach(v => {
@@ -212,9 +181,7 @@ const buildRegionOptions = () => {
       const cityNode = { name: city, children: [] }
       for (let [district, towns] of districtMap.entries()) {
         const districtNode = { name: district || '直接镇', children: [] }
-        for (let town of towns) {
-          districtNode.children.push({ name: town })
-        }
+        for (let town of towns) districtNode.children.push({ name: town })
         cityNode.children.push(districtNode)
       }
       provinceNode.children.push(cityNode)
@@ -224,7 +191,6 @@ const buildRegionOptions = () => {
   return options
 }
 
-// 加载全国村庄数据
 const loadVillages = async () => {
   try {
     const res = await axios.get('/api/villages')
@@ -239,7 +205,7 @@ const loadVillages = async () => {
   }
 }
 
-// 一级产业列表（基于全国数据，将非预设产业归为“其他”）
+// 计算属性
 const industryList = computed(() => {
   const types = new Set()
   allVillages.value.forEach(v => {
@@ -250,7 +216,6 @@ const industryList = computed(() => {
   return Array.from(types).sort()
 })
 
-// 根据选中的一级产业获取基础村庄列表（处理“其他”）
 const getBaseVillagesByIndustry = (industry) => {
   if (industry === '其他') {
     return allVillages.value.filter(v => !predefinedIndustries.includes(v.industry_type))
@@ -259,7 +224,6 @@ const getBaseVillagesByIndustry = (industry) => {
   }
 }
 
-// 二级产品列表（基于选中的一级产业）
 const subCategoryList = computed(() => {
   if (!selectedIndustry.value) return []
   const base = getBaseVillagesByIndustry(selectedIndustry.value)
@@ -270,12 +234,8 @@ const subCategoryList = computed(() => {
   return Array.from(cats).sort()
 })
 
-// 一级产业变化时重置二级筛选
-const onIndustryChange = () => {
-  selectedSubCategory.value = ''
-}
+const onIndustryChange = () => { selectedSubCategory.value = '' }
 
-// 地区筛选辅助：根据级联值筛选村庄
 const filterByRegion = (villages, regionPath) => {
   if (!regionPath.length) return villages
   const [selectedProvince, selectedCity, selectedDistrict, selectedTown] = regionPath
@@ -294,66 +254,58 @@ const filterByRegion = (villages, regionPath) => {
   })
 }
 
-// 基础筛选（产业、产品、地区）后的村庄
 const filteredVillages = computed(() => {
   let result = allVillages.value
-  if (selectedIndustry.value) {
-    result = getBaseVillagesByIndustry(selectedIndustry.value)
-  }
-  if (selectedSubCategory.value) {
-    result = result.filter(v => v.sub_category === selectedSubCategory.value)
-  }
-  if (selectedRegion.value.length) {
-    result = filterByRegion(result, selectedRegion.value)
-  }
+  if (selectedIndustry.value) result = getBaseVillagesByIndustry(selectedIndustry.value)
+  if (selectedSubCategory.value) result = result.filter(v => v.sub_category === selectedSubCategory.value)
+  if (selectedRegion.value.length) result = filterByRegion(result, selectedRegion.value)
   return result
 })
 
-// 搜索过滤后的村庄
-const searchedVillages = computed(() => {
-  let result = filteredVillages.value
-  if (searchKeyword.value) {
-    const kw = searchKeyword.value.toLowerCase()
-    result = result.filter(v =>
-      v.name?.toLowerCase().includes(kw) ||
-      v.product_name?.toLowerCase().includes(kw)
-    )
-  }
-  return result
-})
-
-// 分页后的村庄
 const paginatedVillages = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
-  const end = start + pageSize.value
-  return searchedVillages.value.slice(start, end)
+  return filteredVillages.value.slice(start, start + pageSize.value)
 })
 
-// 监听筛选、搜索变化，重置页码
-watch([selectedIndustry, selectedSubCategory, selectedRegion, searchKeyword], () => {
+// 监听筛选变化，重置页码
+watch([selectedIndustry, selectedSubCategory, selectedRegion], () => {
   currentPage.value = 1
 })
 
-const handleSizeChange = (val) => {
-  pageSize.value = val
-  currentPage.value = 1
-}
-const handleCurrentChange = (val) => {
-  currentPage.value = val
-}
-
+const handleSizeChange = (val) => { pageSize.value = val; currentPage.value = 1 }
+const handleCurrentChange = (val) => { currentPage.value = val }
 const goDetail = (id) => router.push(`/village/${id}`)
 
 onMounted(() => {
   loadVillages()
-  const loadFavorites = () => {
   const favs = JSON.parse(localStorage.getItem('favoriteVillages') || '[]')
   favoriteIds.value = favs
-}
 })
 </script>
 
 <style scoped>
+.products-page {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+  margin-bottom: 24px;
+  border-left: 5px solid #e67e22;
+  padding-left: 20px;
+}
+.header h1 {
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #2b5e2b;
+}
+.filter-row {
+  margin: 20px 0;
+  text-align: center;
+}
 .village-card {
   cursor: pointer;
   transition: all 0.25s ease;
@@ -379,7 +331,6 @@ onMounted(() => {
 }
 .info h3 {
   margin: 0 0 5px;
-  font-size: 1.2rem;
   color: #2b5e2b;
 }
 .product {
@@ -404,20 +355,25 @@ onMounted(() => {
   padding: 8px 12px;
 }
 .favorite-icon {
-  font-size: 22px;
+  font-size: 24px;
   cursor: pointer;
   transition: transform 0.2s;
 }
 .favorite-icon:hover {
   transform: scale(1.1);
 }
-.search-row {
-  text-align: center;
-  margin-bottom: 12px;
-}
 .pagination-row {
   display: flex;
   justify-content: center;
   margin-top: 20px;
+}
+.empty {
+  text-align: center;
+  padding: 50px;
+  color: #999;
+}
+@media (max-width: 768px) {
+  .header h1 { font-size: 1.4rem; }
+  .village-img { width: 70px; height: 70px; }
 }
 </style>

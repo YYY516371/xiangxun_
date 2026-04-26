@@ -64,63 +64,53 @@
       />
     </div>
 
-<!-- 搜索框 -->
-<div class="search-row">
-  <el-input
-    v-model="searchKeyword"
-    placeholder="搜索村庄或产品"
-    clearable
-    prefix-icon="Search"
-    style="width: 300px; margin-bottom: 16px;"
-  />
-</div>
-
     <!-- 村庄卡片网格 -->
-  <el-row :gutter="20">
-  <el-col :span="12" v-for="v in paginatedVillages" :key="v.id" style="margin-bottom: 20px;">
-    <el-card class="village-card">
-      <!-- 卡片主体（点击跳转详情） -->
-      <div class="card-content" @click="goDetail(v.id)">
-        <img :src="v.image_url || defaultImage" class="village-img" />
-        <div class="info">
-          <h3>{{ simplifyName(v.name) }}</h3>
-          <p class="product">{{ v.product_name || '特色产品' }}</p>
-          <p class="location">{{ v.city }} · {{ v.county || '' }}</p>
-        </div>
-      </div>
+    <el-row :gutter="20">
+      <el-col :span="12" v-for="v in paginatedVillages" :key="v.id" style="margin-bottom: 20px;">
+        <el-card class="village-card">
+          <!-- 卡片主体（点击跳转详情） -->
+          <div class="card-content" @click="goDetail(v.id)">
+            <img :src="v.image_url || defaultImage" class="village-img" />
+            <div class="info">
+              <h3>{{ simplifyName(v.name) }}</h3>
+              <p class="product">{{ v.product_name || '特色产品' }}</p>
+              <p class="location">{{ v.city }} · {{ v.county || '' }}</p>
+            </div>
+          </div>
 
-      <!-- 百科链接按钮组 -->
-      <div class="baike-buttons">
-        <el-button link type="primary" size="small" @click.stop="openBaike(v, 0)">
-          📖 村庄简介
-        </el-button>
-        <el-button link type="success" size="small" @click.stop="openBaike(v, 1)">
-          🛒 产品介绍
-        </el-button>
-      </div>
+          <!-- 百科链接按钮组 -->
+          <div class="baike-buttons">
+            <el-button link type="primary" size="small" @click.stop="openBaike(v, 0)">
+              📖 村庄简介
+            </el-button>
+            <el-button link type="success" size="small" @click.stop="openBaike(v, 1)">
+              🛒 产品介绍
+            </el-button>
+          </div>
 
-      <!-- 收藏图标 -->
-      <div class="card-footer">
-        <el-icon class="favorite-icon" :color="isFavorited(v.id) ? '#f56c6c' : '#999'" @click.stop="toggleFavorite(v.id)">
-          <StarFilled v-if="isFavorited(v.id)" />
-          <Star v-else />
-        </el-icon>
-      </div>
-    </el-card>
-  </el-col>
-</el-row>
+          <!-- 收藏图标 -->
+          <div class="card-footer">
+            <el-icon class="favorite-icon" :color="isFavorited(v.id) ? '#f56c6c' : '#999'" @click.stop="toggleFavorite(v.id)">
+              <StarFilled v-if="isFavorited(v.id)" />
+              <Star v-else />
+            </el-icon>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
 
+    <!-- 分页组件 -->
     <div class="pagination-row">
-  <el-pagination
-    v-model:current-page="currentPage"
-    v-model:page-size="pageSize"
-    :page-sizes="[6, 12, 18, 24]"
-    :total="searchedVillages.length"
-    layout="total, sizes, prev, pager, next"
-    @size-change="handleSizeChange"
-    @current-change="handleCurrentChange"
-  />
-</div>
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :page-sizes="[6, 12, 18, 24]"
+        :total="filteredVillages.length"
+        layout="total, sizes, prev, pager, next"
+        @size-change="handleSizeChange"
+        @current-change="handleCurrentChange"
+      />
+    </div>
 
     <div v-if="filteredVillages.length === 0" class="empty">暂无村庄数据</div>
 
@@ -146,6 +136,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import axios from 'axios'
+import { ElMessage } from 'element-plus'
 import { Star, StarFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -154,82 +145,44 @@ const provinceName = route.params.name
 const industryTypeFromMap = route.query.industry
 const isIndustryMode = !!industryTypeFromMap
 
-// 预设产业列表（用于“其他”判断）
+// 预设产业列表
 const predefinedIndustries = ['茶', '果', '药', '渔', '蔬', '花', '畜', '粮']
-
 const displayIndustryName = computed(() => {
   if (industryTypeFromMap === '其他') return '其他'
   return industryTypeFromMap || ''
 })
 
+// 数据
 const allVillages = ref([])
-// 响应式收藏列表
-const favoriteIds = ref([])
+const favoriteIds = ref([])          // 收藏的村庄 ID 列表
+const defaultImage = 'https://picsum.photos/id/104/150/150'
 
 // 筛选状态
 const selectedIndustryType = ref('')
 const selectedSubCategory = ref('')
 const selectedArea = ref([])
-
 const areaOptions = ref([])
 
-// 搜索与分页
-const searchKeyword = ref('')
+// 分页
 const currentPage = ref(1)
 const pageSize = ref(6)
 
-// 基于现有筛选结果再进行搜索过滤
-const searchedVillages = computed(() => {
-  let result = filteredVillages.value
-  if (searchKeyword.value) {
-    const kw = searchKeyword.value.toLowerCase()
-    result = result.filter(v =>
-      v.name?.toLowerCase().includes(kw) ||
-      v.product_name?.toLowerCase().includes(kw)
-    )
-  }
-  return result
-})
-
-// 分页后的村庄列表（替代模板中的 filteredVillages）
-const paginatedVillages = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  const end = start + pageSize.value
-  return searchedVillages.value.slice(start, end)
-})
-
-// 监听所有筛选条件变化，重置页码
-watch([selectedIndustryType, selectedSubCategory, selectedArea, searchKeyword], () => {
-  currentPage.value = 1
-})
-
-// 分页方法
-const handleSizeChange = (val) => {
-  pageSize.value = val
-  currentPage.value = 1
-}
-const handleCurrentChange = (val) => {
-  currentPage.value = val
-}
-
-// 饼图实例
+// 饼图
 let pieChart = null
 const pieChartRef = ref(null)
 
-// 产业占比数据
+// 产业占比 & TOP10
 const industryStats = ref([])
-// TOP10 产品（按点赞数）
 const topProducts = ref([])
 
-// 弹窗相关
+// 弹窗
 const dialogVisible = ref(false)
 const currentProduct = ref('')
 const productVillages = ref([])
 
-// 从村庄 name 中提取区、镇
+// ----- 辅助函数 -----
 const parseDistrictTown = (fullName) => {
-  let district = null
-  let town = null
+  let district = null, town = null
   const districtMatch = fullName.match(/(.+?区)/)
   if (districtMatch) district = districtMatch[1]
   const townMatch = fullName.match(/(.+?镇)/)
@@ -237,7 +190,6 @@ const parseDistrictTown = (fullName) => {
   return { district, town }
 }
 
-// 简化村名
 const simplifyName = (fullName) => {
   if (!fullName) return ''
   let name = fullName
@@ -248,45 +200,35 @@ const simplifyName = (fullName) => {
   return name || fullName
 }
 
-// 解析 baike_urls 字段，返回链接数组
 const parseBaikeUrls = (urls) => {
   if (!urls || urls === 'NaN') return []
-  // 按逗号或竖线分割
-  const splitUrls = urls.split(/[,|]/).map(u => u.trim())
-  return splitUrls.filter(u => u.startsWith('http'))
+  return urls.split(/[,|]/).map(u => u.trim()).filter(u => u.startsWith('http'))
 }
 
-// 判断是否已收藏
-const isFavorited = (id) => {
-  return favoriteIds.value.includes(id)
-}
+const isFavorited = (id) => favoriteIds.value.includes(id)
 
-// 切换收藏
 const toggleFavorite = (id) => {
   const index = favoriteIds.value.indexOf(id)
   if (index !== -1) {
-    favoriteIds.value.splice(index, 1)   // 移除
+    favoriteIds.value.splice(index, 1)
     ElMessage.success('已取消收藏')
   } else {
-    favoriteIds.value.push(id)           // 添加
+    favoriteIds.value.push(id)
     ElMessage.success('已添加收藏')
   }
-  // 同步到 localStorage
   localStorage.setItem('favoriteVillages', JSON.stringify(favoriteIds.value))
 }
 
-// 打开百度百科（index: 0=村庄简介，1=产品介绍）
-const openBaike = (village, index) => {
+const openBaike = (village, idx) => {
   const urls = parseBaikeUrls(village.baike_urls)
-  const url = urls[index]
+  const url = urls[idx]
   if (url) {
     window.open(url, '_blank')
   } else {
-    ElMessage.warning(index === 0 ? '暂无村庄简介' : '暂无产品介绍')
+    ElMessage.warning(idx === 0 ? '暂无村庄简介' : '暂无产品介绍')
   }
 }
 
-// 构建区域筛选选项（城市 → 区 → 镇）
 const buildAreaOptions = () => {
   const cityMap = new Map()
   allVillages.value.forEach(v => {
@@ -307,9 +249,7 @@ const buildAreaOptions = () => {
     const cityNode = { name: city, children: [] }
     for (let [district, towns] of districtMap.entries()) {
       const districtNode = { name: district || '直接镇', children: [] }
-      for (let town of towns) {
-        districtNode.children.push({ name: town })
-      }
+      for (let town of towns) districtNode.children.push({ name: town })
       cityNode.children.push(districtNode)
     }
     options.push(cityNode)
@@ -317,7 +257,6 @@ const buildAreaOptions = () => {
   return options
 }
 
-// 根据产业类型获取村庄列表（处理“其他”）
 const getBaseVillagesByIndustry = (industry) => {
   if (industry === '其他') {
     return allVillages.value.filter(v => !predefinedIndustries.includes(v.industry_type))
@@ -326,7 +265,6 @@ const getBaseVillagesByIndustry = (industry) => {
   }
 }
 
-// 计算产业占比（基于该省所有村庄）
 const computeIndustryStats = () => {
   const stats = new Map()
   allVillages.value.forEach(v => {
@@ -338,9 +276,8 @@ const computeIndustryStats = () => {
   renderPieChart()
 }
 
-// 计算 TOP10 产品（按点赞数）
 const computeTopProducts = () => {
-  const productMap = new Map() // key: product_name, value: total likes
+  const productMap = new Map()
   allVillages.value.forEach(v => {
     const prod = v.product_name
     if (prod && prod !== 'NaN') {
@@ -348,64 +285,49 @@ const computeTopProducts = () => {
       productMap.set(prod, (productMap.get(prod) || 0) + likes)
     }
   })
-  const sorted = Array.from(productMap.entries())
+  topProducts.value = Array.from(productMap.entries())
     .map(([product, totalLikes]) => ({ product, totalLikes }))
     .sort((a, b) => b.totalLikes - a.totalLikes)
     .slice(0, 10)
-  topProducts.value = sorted
 }
 
-// 渲染饼图
 const renderPieChart = () => {
   if (!pieChartRef.value) return
   if (pieChart) pieChart.dispose()
   pieChart = echarts.init(pieChartRef.value)
-
-  const total = industryStats.value.reduce((sum, item) => sum + item.value, 0)
-
+  const total = industryStats.value.reduce((s, i) => s + i.value, 0)
   const option = {
     tooltip: { trigger: 'item' },
     legend: { show: false },
     series: [{
       type: 'pie',
       radius: '55%',
-      center: ['70%', '50%'],        // 关键：饼图水平右移（70% 处），垂直居中
+      center: ['70%', '50%'],
       data: industryStats.value,
       label: {
         show: true,
         position: 'outside',
-        formatter: (params) => {
-          const percent = ((params.value / total) * 100).toFixed(1)
-          return `${params.name} (${percent}%)`
-        },
-        lineHeight: 20,
+        formatter: (params) => `${params.name} (${((params.value / total) * 100).toFixed(1)}%)`,
         fontSize: 12,
-        fontWeight: 'normal',
-        color: '#333',
         lineLength: 20,
         lineLength2: 15,
-        bleedMargin: 10
       },
-      labelLine: {
-        show: true,
-        length: 20,
-        length2: 15,
-        smooth: false,
-        lineStyle: { color: '#aaa', width: 1 }
-      },
+      labelLine: { show: true, smooth: false, lineStyle: { color: '#aaa', width: 1 } },
       avoidLabelOverlap: true,
       emphasis: { scale: true },
-      itemStyle: {
-        borderRadius: 8,
-        borderColor: '#fff',
-        borderWidth: 2
-      }
+      itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 }
     }]
   }
   pieChart.setOption(option)
 }
-// 加载该省所有村庄1
+
+// ----- 数据加载 -----
 const loadVillages = async () => {
+  // 重置筛选（可选）
+  selectedIndustryType.value = ''
+  selectedSubCategory.value = ''
+  selectedArea.value = []
+  allVillages.value = []
   try {
     const res = await axios.get(`/api/villages?province=${provinceName}`)
     allVillages.value = res.data
@@ -420,14 +342,7 @@ const loadVillages = async () => {
   }
 }
 
-// 显示某个产品下的所有村庄
-const showProductVillages = (productName) => {
-  currentProduct.value = productName
-  productVillages.value = allVillages.value.filter(v => v.product_name === productName)
-  dialogVisible.value = true
-}
-
-// 一级产业列表（该省实际存在的产业类型，将非预设产业统一显示为“其他”）
+// ----- 计算属性 -----
 const industryTypeList = computed(() => {
   const types = new Set()
   allVillages.value.forEach(v => {
@@ -438,7 +353,6 @@ const industryTypeList = computed(() => {
   return Array.from(types).sort()
 })
 
-// 二级产品列表（根据当前选中的产业）
 const subCategoryList = computed(() => {
   let base = null
   if (isIndustryMode) {
@@ -455,16 +369,8 @@ const subCategoryList = computed(() => {
   return Array.from(cats).sort()
 })
 
-// 一级产业变化时重置二级筛选
-const onIndustryTypeChange = () => {
-  selectedSubCategory.value = ''
-}
-
-// 最终筛选后的村庄列表
 const filteredVillages = computed(() => {
   let result = allVillages.value
-
-  // 1. 产业地图入口：只显示该产业（处理“其他”）
   if (isIndustryMode && industryTypeFromMap) {
     result = getBaseVillagesByIndustry(industryTypeFromMap)
     if (selectedSubCategory.value) {
@@ -472,8 +378,6 @@ const filteredVillages = computed(() => {
     }
     return result
   }
-
-  // 2. 非产业模式：应用一级产业、二级产品、区域筛选
   if (selectedIndustryType.value) {
     result = getBaseVillagesByIndustry(selectedIndustryType.value)
   }
@@ -485,39 +389,58 @@ const filteredVillages = computed(() => {
     result = result.filter(v => {
       if (v.city !== selectedCity) return false
       const { district, town } = parseDistrictTown(v.name)
-      if (selectedTown) {
-        return district === selectedDistrict && town === selectedTown
-      } else if (selectedDistrict) {
-        return district === selectedDistrict
-      } else {
-        return true
-      }
+      if (selectedTown) return district === selectedDistrict && town === selectedTown
+      if (selectedDistrict) return district === selectedDistrict
+      return true
     })
   }
   return result
 })
 
-const goDetail = (id) => router.push(`/village/${id}`)
-
-onMounted(() => {
-  loadVillages()
-  window.addEventListener('resize', () => {
-    pieChart?.resize()
-  })
-  const loadFavorites = () => {
-  const favs = JSON.parse(localStorage.getItem('favoriteVillages') || '[]')
-  favoriteIds.value = favs
-}
+const paginatedVillages = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredVillages.value.slice(start, start + pageSize.value)
 })
 
+// ----- 事件 -----
+const onIndustryTypeChange = () => { selectedSubCategory.value = '' }
+const handleSizeChange = (val) => { pageSize.value = val; currentPage.value = 1 }
+const handleCurrentChange = (val) => { currentPage.value = val }
+const goDetail = (id) => router.push(`/village/${id}`)
+const showProductVillages = (productName) => {
+  currentProduct.value = productName
+  productVillages.value = allVillages.value.filter(v => v.product_name === productName)
+  dialogVisible.value = true
+}
 
-
-// 监听数据变化重新渲染饼图和TOP10（仅在区域模式）
+// ----- 监听 -----
+watch([selectedIndustryType, selectedSubCategory, selectedArea], () => {
+  currentPage.value = 1
+})
+watch(
+  () => route.params.name,
+  (newName, oldName) => {
+    if (newName !== oldName) loadVillages()
+  }
+)
+watch(
+  () => route.query.industry,
+  () => loadVillages()
+)
 watch(allVillages, () => {
   if (!isIndustryMode) {
     computeIndustryStats()
     computeTopProducts()
   }
+})
+
+// ----- 生命周期 -----
+onMounted(() => {
+  loadVillages()
+  // 加载收藏列表
+  const favs = JSON.parse(localStorage.getItem('favoriteVillages') || '[]')
+  favoriteIds.value = favs
+  window.addEventListener('resize', () => pieChart?.resize())
 })
 </script>
 
@@ -527,7 +450,6 @@ watch(allVillages, () => {
   max-width: 1200px;
   margin: 0 auto;
 }
-
 .header {
   display: flex;
   align-items: baseline;
@@ -549,7 +471,6 @@ watch(allVillages, () => {
   font-size: 14px;
   color: #5a3e2b;
 }
-
 .stats-row {
   margin-bottom: 24px;
 }
@@ -562,12 +483,10 @@ watch(allVillages, () => {
   padding: 40px 0;
   color: #999;
 }
-
 .filter-row {
   margin: 20px 0;
   text-align: center;
 }
-
 .village-card {
   cursor: pointer;
   transition: all 0.25s ease;
@@ -605,18 +524,6 @@ watch(allVillages, () => {
   font-size: 12px;
   color: #888;
 }
-.empty {
-  text-align: center;
-  padding: 50px;
-  color: #999;
-}
-
-@media (max-width: 768px) {
-  .header h1 { font-size: 1.4rem; }
-  .village-img { width: 70px; height: 70px; }
-  .pie-chart { height: 200px; }
-}
-
 .baike-buttons {
   display: flex;
   gap: 12px;
@@ -636,5 +543,20 @@ watch(allVillages, () => {
 }
 .favorite-icon:hover {
   transform: scale(1.1);
+}
+.pagination-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+.empty {
+  text-align: center;
+  padding: 50px;
+  color: #999;
+}
+@media (max-width: 768px) {
+  .header h1 { font-size: 1.4rem; }
+  .village-img { width: 70px; height: 70px; }
+  .pie-chart { height: 200px; }
 }
 </style>

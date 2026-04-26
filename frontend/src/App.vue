@@ -6,24 +6,46 @@
       <router-link to="/products">产品浏览</router-link>
       <router-link to="/ranking">热门排行榜</router-link>
 
-      <div class="user-menu" v-if="userStore.token">
-        <el-dropdown @command="handleCommand">
-          <span class="el-dropdown-link">
-            {{ userStore.user?.username || '用户' }}
-            <el-icon><ArrowDown /></el-icon>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="profile">个人中心</el-dropdown-item>
-              <el-dropdown-item command="logout">退出登录</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+      <!-- 右侧区域：搜索 + 用户菜单 -->
+      <div class="nav-right">
+        <!-- 全局搜索组件 -->
+        <div class="global-search">
+          <transition name="slide-fade">
+            <el-input
+              v-if="showSearchInput"
+              ref="searchInputRef"
+              v-model="globalKeyword"
+              placeholder="搜索村庄或产品"
+              size="small"
+              clearable
+              @keyup.enter="doSearch"
+              @blur="handleBlur"
+              class="global-search-input"
+            />
+          </transition>
+          <el-icon class="search-icon" @click="toggleSearch"><Search /></el-icon>
+        </div>
+
+        <!-- 登录/用户菜单 -->
+        <div class="user-menu" v-if="userStore.token">
+          <el-dropdown @command="handleCommand">
+            <span class="el-dropdown-link">
+              {{ userStore.user?.username || '用户' }}
+              <el-icon><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+        <router-link v-else to="/login" class="login-link">登录/注册</router-link>
       </div>
-      <router-link v-else to="/login" class="login-link">登录/注册</router-link>
     </div>
 
-    <router-view v-slot="{ Component }">
+    <router-view :key="$route.fullPath" v-slot="{ Component }">
       <transition name="fade" mode="out-in">
         <component :is="Component" />
       </transition>
@@ -35,10 +57,44 @@
 import { useUserStore } from './stores/user'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, Search } from '@element-plus/icons-vue'
+import { ref, nextTick } from 'vue'
 
 const userStore = useUserStore()
 const router = useRouter()
+
+// 全局搜索状态
+const showSearchInput = ref(false)
+const globalKeyword = ref('')
+const searchInputRef = ref(null)
+
+const toggleSearch = () => {
+  showSearchInput.value = !showSearchInput.value
+  if (showSearchInput.value) {
+    nextTick(() => {
+      searchInputRef.value?.focus()
+    })
+  } else {
+    globalKeyword.value = ''
+  }
+}
+
+const doSearch = () => {
+  if (globalKeyword.value.trim()) {
+    router.push(`/search?keyword=${encodeURIComponent(globalKeyword.value.trim())}`)
+    showSearchInput.value = false
+    globalKeyword.value = ''
+  }
+}
+
+const handleBlur = () => {
+  setTimeout(() => {
+    if (!searchInputRef.value?.isFocused) {
+      showSearchInput.value = false
+      globalKeyword.value = ''
+    }
+  }, 150)
+}
 
 const handleCommand = (command) => {
   if (command === 'profile') {
@@ -68,7 +124,7 @@ const handleCommand = (command) => {
   --transition-default: all 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1);
 }
 
-/* 平滑滚动（已从 script 移至此） */
+/* 平滑滚动 */
 html {
   scroll-behavior: smooth;
 }
@@ -111,7 +167,7 @@ body {
   background: #7a5a3e;
 }
 
-/* ========== 路由过渡动画（增强） ========== */
+/* ========== 路由过渡动画 ========== */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease, transform 0.3s ease;
@@ -125,7 +181,7 @@ body {
   transform: translateY(-8px);
 }
 
-/* ========== 导航栏（毛玻璃 + 悬浮效果） ========== */
+/* ========== 导航栏 ========== */
 .nav-bar {
   display: flex;
   align-items: center;
@@ -172,12 +228,47 @@ body {
   transform: translateY(-1px);
 }
 
-.user-menu {
+/* 右侧区域（搜索+用户）整体靠右 */
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
   margin-left: auto;
+}
+
+/* 全局搜索样式 */
+.global-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.search-icon {
+  font-size: 20px;
+  cursor: pointer;
+  color: white !important;
+  transition: transform 0.2s;
+}
+.search-icon:hover {
+  transform: scale(1.1);
+}
+.global-search-input {
+  width: 200px;
+  transition: all 0.3s;
+}
+.slide-fade-enter-active,
+.slide-fade-leave-active {
+  transition: all 0.2s ease;
+}
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+  transform: translateX(20px);
+  opacity: 0;
+}
+
+.user-menu {
   cursor: pointer;
   color: white;
 }
-
 .el-dropdown-link {
   color: white;
   display: flex;
@@ -188,17 +279,16 @@ body {
   border-radius: 40px;
   transition: var(--transition-default);
 }
-
 .el-dropdown-link:hover {
   background: rgba(255, 255, 255, 0.25);
   transform: translateY(-1px);
 }
 
 .login-link {
-  margin-left: auto;
+  /* 无需额外 margin，因为父容器 .nav-right 已经靠右 */
 }
 
-/* ========== 全局按钮风格 ========== */
+/* ========== 全局按钮 ========== */
 .el-button {
   border-radius: 40px !important;
   transition: var(--transition-default) !important;
@@ -229,7 +319,7 @@ body {
   transform: translateY(-2px);
 }
 
-/* ========== Element Plus 组件覆盖（全局） ========== */
+/* ========== 卡片 ========== */
 .el-card {
   background: var(--card-bg) !important;
   backdrop-filter: blur(4px);
@@ -264,7 +354,7 @@ body {
   color: var(--primary-dark);
 }
 
-/* ========== 响应式调整 ========== */
+/* ========== 响应式 ========== */
 @media (max-width: 768px) {
   .nav-bar {
     flex-wrap: wrap;
@@ -276,15 +366,17 @@ body {
     font-size: 14px;
     padding: 4px 10px;
   }
-  .user-menu {
+  .nav-right {
     margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
   }
-  .login-link {
-    margin-left: 0;
+  .global-search-input {
+    width: 150px;
   }
 }
 
-/* ========== 加载状态 & 空状态美化 ========== */
+/* ========== 加载状态 ========== */
 .el-loading-mask {
   background-color: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(2px);
@@ -297,7 +389,7 @@ body {
   color: #8b6b4a;
 }
 
-/* ========== 自定义模拟数据提示条（可在各页面复用） ========== */
+/* ========== 模拟数据提示条 ========== */
 .mock-banner {
   background: #fff3e0;
   color: #e6a23c;

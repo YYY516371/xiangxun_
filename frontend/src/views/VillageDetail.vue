@@ -94,7 +94,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Star, StarFilled, Collection, Flag } from '@element-plus/icons-vue'
@@ -293,6 +293,9 @@ const openBaike = (url) => {
 }
 
 const loadVillage = async () => {
+  // 清空旧数据
+village.value = null
+comments.value = []
   loading.value = true
   try {
     const res = await axios.get(`/api/village/${villageId}`)
@@ -314,6 +317,17 @@ const loadVillage = async () => {
 
 const goRanking = () => router.push('/ranking')
 const goLogin = () => router.push('/login')
+
+watch(
+  () => route.params.id,
+  (newId, oldId) => {
+    if (newId !== oldId) {
+      loadVillage()
+      fetchUserInteractions()
+      loadComments(false)
+    }
+  }
+)
 
 onMounted(async () => {
   await loadVillage()
