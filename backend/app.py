@@ -120,22 +120,34 @@ def load_villages():
     global villages_data, provinces_data, categories_data
     try:
         df = pd.read_csv(CSV_PATH, encoding='utf-8-sig')
+        print(f"📄 CSV 文件路径: {CSV_PATH}")
+        print(f"📏 CSV 文件总行数（含表头）: {len(df)}")
         villages_data = df.to_dict(orient='records')
-        # 省份统计
+        # ----------------- 清洗 NaN  -----------------
+        import math
+        for item in villages_data:
+            for k, v in item.items():
+                if isinstance(v, float) and math.isnan(v):
+                    item[k] = None   # 或 '' 或 0，根据前端需求
+        # --------------------------------------------
+        print(f"✅ villages_data 列表长度: {len(villages_data)}")
+        # 后续省份统计等
         province_stats = {}
         for v in villages_data:
             p = v.get('province', '未知')
             province_stats[p] = province_stats.get(p, 0) + 1
         provinces_data = [{'name': p, 'count': c} for p, c in province_stats.items()]
-        # 分类统计
         category_stats = {}
         for v in villages_data:
             cat = v.get('industry_type', '其他')
             category_stats[cat] = category_stats.get(cat, 0) + 1
         categories_data = [{'name': c, 'count': cnt} for c, cnt in category_stats.items()]
-        print(f"✅ 加载 {len(villages_data)} 条村庄数据")
+        print(f"✅ 统计完成: {len(provinces_data)} 个省份, {len(categories_data)} 个分类")
     except Exception as e:
         print(f"❌ 加载失败: {e}")
+        villages_data = []
+        provinces_data = []
+        categories_data = []
 
 load_villages()
 
