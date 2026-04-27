@@ -1,6 +1,11 @@
+"""
+一村一品 API 服务
+从 CSV 文件读取数据，支持用户认证、收藏、点赞、评论、排行榜
+"""
 import os
 import sqlite3
 import hashlib
+import uuid
 from datetime import datetime
 from functools import wraps
 import pandas as pd
@@ -14,8 +19,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, 'villages.csv')
 DB_PATH = os.path.join(BASE_DIR, 'xiangxun.db')
 
+
 # ========== 数据库初始化 ==========
 def init_db():
+    """初始化数据库表结构"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     # 用户表
@@ -25,7 +32,7 @@ def init_db():
         password TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
-    # 用户会话（简单版，用token）
+    # 会话表（存储 token）
     c.execute('''CREATE TABLE IF NOT EXISTS sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -46,7 +53,7 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (user_id, village_id)
     )''')
-    # 点赞表（村庄点赞）
+    # 村庄点赞表
     c.execute('''CREATE TABLE IF NOT EXISTS village_likes (
         user_id INTEGER NOT NULL,
         village_id INTEGER NOT NULL,
@@ -72,35 +79,46 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 init_db()
+
 
 # ========== 辅助函数 ==========
 def get_db():
+    """获取数据库连接（请求上下文）"""
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DB_PATH)
         db.row_factory = sqlite3.Row
     return db
 
+
 @app.teardown_appcontext
 def close_connection(exception):
+    """关闭数据库连接"""
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
 
+
 def hash_password(password):
+    """SHA256 加密密码"""
     return hashlib.sha256(password.encode()).hexdigest()
 
+
 def verify_password(password, hashed):
+    """验证密码"""
     return hash_password(password) == hashed
 
+
 def login_required(f):
+    """认证装饰器：验证请求头中的 token"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        if not token:
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
             return jsonify({'error': 'Missing token'}), 401
-        token = token.replace('Bearer ', '')
+        token = auth_header.replace('Bearer ', '')
         db = get_db()
         c = db.cursor()
         c.execute('SELECT user_id FROM sessions WHERE token = ?', (token,))
@@ -111,50 +129,49 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# ========== 加载村庄数据（从CSV） ==========
+
+# ========== 加载村庄数据（从 CSV） ==========
 villages_data = []
 provinces_data = []
 categories_data = []
+
 
 def load_villages():
     global villages_data, provinces_data, categories_data
     try:
         df = pd.read_csv(CSV_PATH, encoding='utf-8-sig')
-        print(f"📄 CSV 文件路径: {CSV_PATH}")
-        print(f"📏 CSV 文件总行数（含表头）: {len(df)}")
         villages_data = df.to_dict(orient='records')
-        # ----------------- 清洗 NaN  -----------------
-        import math
-        for item in villages_data:
-            for k, v in item.items():
-                if isinstance(v, float) and math.isnan(v):
-                    item[k] = None   # 或 '' 或 0，根据前端需求
-        # --------------------------------------------
-        print(f"✅ villages_data 列表长度: {len(villages_data)}")
-        # 后续省份统计等
+        # 统一 baike_urls 分隔符
+        for v in villages_data:
+            urls = v.get('baike_urls')
+            if urls and isinstance(urls, str):
+                urls = urls.replace(',', '|').replace('，', '|').replace('\uff0c', '|')
+                v['baike_urls'] = '|'.join([u.strip() for u in urls.split('|') if u.strip()])
+        # 省份统计
         province_stats = {}
         for v in villages_data:
             p = v.get('province', '未知')
             province_stats[p] = province_stats.get(p, 0) + 1
         provinces_data = [{'name': p, 'count': c} for p, c in province_stats.items()]
+        # 分类统计
         category_stats = {}
         for v in villages_data:
             cat = v.get('industry_type', '其他')
             category_stats[cat] = category_stats.get(cat, 0) + 1
         categories_data = [{'name': c, 'count': cnt} for c, cnt in category_stats.items()]
-        print(f"✅ 统计完成: {len(provinces_data)} 个省份, {len(categories_data)} 个分类")
+        print(f"✅ 加载 {len(villages_data)} 条村庄数据")
     except Exception as e:
         print(f"❌ 加载失败: {e}")
-        villages_data = []
-        provinces_data = []
-        categories_data = []
+
 
 load_villages()
 
-# ========== 基础API（无需认证） ==========
+
+# ========== 基础 API（无需认证） ==========
 @app.route('/')
 def hello():
     return '一村一品 API 服务运行中'
+
 
 @app.route('/api/villages', methods=['GET'])
 def get_villages():
@@ -176,6 +193,7 @@ def get_villages():
         result = [v for v in result if keyword in str(v.get('name', '')) or keyword in str(v.get('product_name', ''))]
     return jsonify(result)
 
+
 @app.route('/api/villages/<int:id>', methods=['GET'])
 def get_village(id):
     for v in villages_data:
@@ -183,17 +201,21 @@ def get_village(id):
             return jsonify(v)
     return jsonify({'error': 'Not found'}), 404
 
+
 @app.route('/api/village/<int:id>', methods=['GET'])
 def get_village_alt(id):
     return get_village(id)
+
 
 @app.route('/api/provinces', methods=['GET'])
 def get_provinces():
     return jsonify(provinces_data)
 
+
 @app.route('/api/categories', methods=['GET'])
 def get_categories():
     return jsonify(categories_data)
+
 
 @app.route('/api/statistics/province-industry', methods=['GET'])
 def province_industry_stats():
@@ -209,9 +231,11 @@ def province_industry_stats():
             stats[prov][ind] += 1
     return jsonify([{'province': prov, **data} for prov, data in stats.items()])
 
+
 @app.route('/api/statistics/province-count', methods=['GET'])
 def province_count_stats():
     return jsonify(provinces_data)
+
 
 @app.route('/api/statistics/province-top-products', methods=['GET'])
 def province_top_products():
@@ -227,6 +251,7 @@ def province_top_products():
     top10 = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:10]
     return jsonify([{'product_name': n, 'count': c} for n, c in top10])
 
+
 @app.route('/api/cities', methods=['GET'])
 def get_cities():
     province = request.args.get('province')
@@ -235,7 +260,8 @@ def get_cities():
     cities = set(v.get('city') for v in villages_data if v.get('province') == province and v.get('city'))
     return jsonify(sorted(cities))
 
-# ========== 用户认证 ==========
+
+# ========== 用户认证接口 ==========
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -253,6 +279,7 @@ def register():
     except sqlite3.IntegrityError:
         return jsonify({'error': 'Username exists'}), 409
 
+
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -264,11 +291,11 @@ def login():
     row = c.fetchone()
     if not row or not verify_password(password, row['password']):
         return jsonify({'error': 'Invalid credentials'}), 401
-    import uuid
     token = str(uuid.uuid4())
     c.execute('INSERT INTO sessions (user_id, token) VALUES (?, ?)', (row['id'], token))
     db.commit()
     return jsonify({'token': token, 'user_id': row['id'], 'username': username})
+
 
 @app.route('/api/user/profile', methods=['GET'])
 @login_required
@@ -279,33 +306,14 @@ def get_profile():
     row = c.fetchone()
     return jsonify(dict(row))
 
-# ========== 收藏/想去/点赞（村庄） ==========
+
+# ========== 收藏 / 想去 / 点赞 ==========
 def get_user_village_ids(table):
     db = get_db()
     c = db.cursor()
     c.execute(f'SELECT village_id FROM {table} WHERE user_id = ?', (request.user_id,))
     return [row['village_id'] for row in c.fetchall()]
 
-def add_remove(table, add):
-    data = request.get_json()
-    village_id = data.get('village_id')
-    if not village_id:
-        return jsonify({'error': 'Missing village_id'}), 400
-    db = get_db()
-    c = db.cursor()
-    if add:
-        try:
-            c.execute(f'INSERT INTO {table} (user_id, village_id) VALUES (?, ?)',
-                      (request.user_id, village_id))
-            db.commit()
-            return jsonify({'message': 'Added'}), 201
-        except sqlite3.IntegrityError:
-            return jsonify({'message': 'Already exists'}), 200
-    else:
-        c.execute(f'DELETE FROM {table} WHERE user_id = ? AND village_id = ?',
-                  (request.user_id, village_id))
-        db.commit()
-        return jsonify({'message': 'Removed'}), 200
 
 @app.route('/api/user/favorites', methods=['GET'])
 @login_required
@@ -314,6 +322,7 @@ def get_favorites():
     result = [v for v in villages_data if v.get('id') in ids]
     return jsonify(result)
 
+
 @app.route('/api/user/wants', methods=['GET'])
 @login_required
 def get_wants():
@@ -321,12 +330,14 @@ def get_wants():
     result = [v for v in villages_data if v.get('id') in ids]
     return jsonify(result)
 
+
 @app.route('/api/user/likes', methods=['GET'])
 @login_required
 def get_likes():
     ids = get_user_village_ids('village_likes')
     result = [v for v in villages_data if v.get('id') in ids]
     return jsonify(result)
+
 
 @app.route('/api/villages/<int:id>/favorite', methods=['POST'])
 @login_required
@@ -340,6 +351,7 @@ def add_favorite(id):
     except sqlite3.IntegrityError:
         return jsonify({'message': 'Already exists'}), 200
 
+
 @app.route('/api/villages/<int:id>/unfavorite', methods=['POST'])
 @login_required
 def remove_favorite(id):
@@ -348,6 +360,7 @@ def remove_favorite(id):
     c.execute('DELETE FROM favorites WHERE user_id = ? AND village_id = ?', (request.user_id, id))
     db.commit()
     return jsonify({'message': 'Removed'}), 200
+
 
 @app.route('/api/villages/<int:id>/want', methods=['POST'])
 @login_required
@@ -361,6 +374,7 @@ def add_want(id):
     except sqlite3.IntegrityError:
         return jsonify({'message': 'Already exists'}), 200
 
+
 @app.route('/api/villages/<int:id>/unwant', methods=['POST'])
 @login_required
 def remove_want(id):
@@ -369,6 +383,7 @@ def remove_want(id):
     c.execute('DELETE FROM wants WHERE user_id = ? AND village_id = ?', (request.user_id, id))
     db.commit()
     return jsonify({'message': 'Removed'}), 200
+
 
 @app.route('/api/villages/<int:id>/like', methods=['POST'])
 @login_required
@@ -382,6 +397,7 @@ def add_village_like(id):
     except sqlite3.IntegrityError:
         return jsonify({'message': 'Already liked'}), 200
 
+
 @app.route('/api/villages/<int:id>/unlike', methods=['POST'])
 @login_required
 def remove_village_like(id):
@@ -390,6 +406,7 @@ def remove_village_like(id):
     c.execute('DELETE FROM village_likes WHERE user_id = ? AND village_id = ?', (request.user_id, id))
     db.commit()
     return jsonify({'message': 'Unliked'}), 200
+
 
 # ========== 评论 ==========
 @app.route('/api/comments', methods=['POST'])
@@ -406,7 +423,6 @@ def add_comment():
               (village_id, request.user_id, content))
     db.commit()
     comment_id = c.lastrowid
-    # 获取用户信息
     c.execute('SELECT username FROM users WHERE id = ?', (request.user_id,))
     user = c.fetchone()
     return jsonify({
@@ -418,6 +434,7 @@ def add_comment():
         'like_count': 0,
         'created_at': datetime.now().isoformat()
     }), 201
+
 
 @app.route('/api/comments/<int:id>/like', methods=['POST'])
 @login_required
@@ -432,13 +449,13 @@ def like_comment(id):
     except sqlite3.IntegrityError:
         return jsonify({'message': 'Already liked'}), 200
 
+
 # ========== 排行榜 ==========
 @app.route('/api/rankings/like', methods=['GET'])
 def ranking_like():
     limit = request.args.get('limit', 10, type=int)
     db = get_db()
     c = db.cursor()
-    # 获取点赞数前limit的村庄，附带每个村庄的最新5条评论（按评论点赞数排序）
     c.execute('''
         SELECT village_id, COUNT(*) as like_count
         FROM village_likes
@@ -450,11 +467,9 @@ def ranking_like():
     result = []
     for row in top_villages:
         village_id = row['village_id']
-        # 获取村庄基本信息
         village = next((v for v in villages_data if v.get('id') == village_id), None)
         if not village:
             continue
-        # 获取该村庄的前5条评论（按点赞数排序）
         c.execute('''
             SELECT c.id, c.user_id, c.content, c.like_count, c.created_at, u.username
             FROM comments c
@@ -472,6 +487,7 @@ def ranking_like():
             'top_comments': comments
         })
     return jsonify(result)
+
 
 @app.route('/api/rankings/want', methods=['GET'])
 def ranking_want():
@@ -498,6 +514,7 @@ def ranking_want():
                 'want_count': row['want_count']
             })
     return jsonify(result)
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
