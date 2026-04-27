@@ -1,10 +1,5 @@
 <template>
   <div class="favorites-page">
-    <!-- 模拟数据提示（可选，因收藏数据来自 localStorage，但若后端接口失败可提示） -->
-    <div v-if="usingMockData" class="mock-banner">
-      ⚠️ 当前部分数据为虚拟示例（后端接口未就绪）
-    </div>
-
     <div class="header">
       <el-button @click="$router.back()" type="primary" plain>← 返回</el-button>
       <h1>我的收藏</h1>
@@ -12,22 +7,48 @@
     </div>
 
     <el-row :gutter="20">
-      <el-col :span="12" v-for="v in favoritesList" :key="v.id" style="margin-bottom: 20px;">
+      <el-col :span="12" v-for="v in paginatedFavorites" :key="v.id" style="margin-bottom: 20px;">
         <el-card class="village-card">
+          <!-- 卡片主体（点击跳转详情） -->
           <div class="card-content" @click="goDetail(v.id)">
-            <img src="https://picsum.photos/id/104/150/150" class="village-img" />
+            <img :src="v.image_url || defaultImage" class="village-img" />
             <div class="info">
               <h3>{{ simplifyName(v.name) }}</h3>
-              <p class="province">{{ v.province }} · {{ v.industry_type }}</p>
-              <p class="desc">{{ v.product_name || v.sub_category || (v.industry_type ? '特色产业：' + v.industry_type : '暂无简介') }}</p>
+              <p class="product">{{ v.product_name || '特色产品' }}</p>
+              <p class="location">{{ v.province }} · {{ v.city }} · {{ v.county || '' }}</p>
             </div>
           </div>
-          <div class="card-actions">
-            <el-button type="danger" size="small" @click="removeFavorite(v.id)">取消收藏</el-button>
+
+          <!-- 百科链接按钮组 -->
+          <div class="baike-buttons">
+            <el-button link type="primary" size="small" @click.stop="openBaike(v, 0)">
+              📖 村庄简介
+            </el-button>
+            <el-button link type="success" size="small" @click.stop="openBaike(v, 1)">
+              🛒 产品介绍
+            </el-button>
+          </div>
+
+          <!-- 收藏图标（可取消收藏） -->
+          <div class="card-footer">
+            <el-icon class="favorite-icon" color="#f56c6c" @click.stop="removeFavorite(v.id)">
+              <StarFilled />
+            </el-icon>
           </div>
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 分页组件 -->
+    <div class="pagination-row" v-if="favoritesList.length > pageSize">
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="favoritesList.length"
+        layout="prev, pager, next"
+        @current-change="handleCurrentChange"
+      />
+    </div>
 
     <div v-if="favoritesList.length === 0" class="empty">
       <el-empty description="暂无收藏，去首页添加吧" />
@@ -37,16 +58,25 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { StarFilled } from '@element-plus/icons-vue'
 import axios from 'axios'
 
 const router = useRouter()
 const favoritesList = ref([])
-const usingMockData = ref(false)
+const currentPage = ref(1)
+const pageSize = ref(6)   // 每页显示6个
+const defaultImage = 'https://picsum.photos/id/104/150/150'
 
-// 简化村名（与其他页面一致）
+// 分页数据
+const paginatedFavorites = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return favoritesList.value.slice(start, start + pageSize.value)
+})
+
+// 简化村名（去除区镇前缀）
 const simplifyName = (fullName) => {
   if (!fullName) return ''
   let name = fullName
@@ -57,41 +87,63 @@ const simplifyName = (fullName) => {
   return name || fullName
 }
 
-const getFavoriteIds = () => {
-  const fav = localStorage.getItem('favoriteVillages')
-  return fav ? JSON.parse(fav) : []
+// 解析百科链接
+const parseBaikeUrls = (urls) => {
+  if (!urls || urls === 'NaN') return []
+  return urls.split(/[,|]/).map(u => u.trim()).filter(u => u.startsWith('http'))
 }
 
+// 打开百科
+const openBaike = (village, index) => {
+  const urls = parseBaikeUrls(village.baike_urls)
+  const url = urls[index]
+  if (url) {
+    window.open(url, '_blank')
+  } else {
+    ElMessage.warning(index === 0 ? '暂无村庄简介' : '暂无产品介绍')
+  }
+}
+
+// 取消收藏
+const removeFavorite = async (id) => {
+  try {
+    await axios.post(`/api/villages/${id}/unfavorite`)
+    favoritesList.value = favoritesList.value.filter(v => v.id !== id)
+    ElMessage.success('已取消收藏')
+    // 如果当前页没有数据了，且不是第一页，则回退一页
+    if (paginatedFavorites.value.length === 0 && currentPage.value > 1) {
+      currentPage.value--
+    }
+  } catch (error) {
+    console.error('取消收藏失败', error)
+    ElMessage.error('操作失败，请稍后重试')
+  }
+}
+
+// 跳转详情
+const goDetail = (id) => router.push(`/village/${id}`)
+
+// 分页切换
+const handleCurrentChange = (val) => {
+  currentPage.value = val
+}
+
+// 加载收藏列表（需要从后端获取完整的村庄数据）
 const loadFavorites = async () => {
-  const ids = getFavoriteIds()
-  if (ids.length === 0) {
-    favoritesList.value = []
+  const token = localStorage.getItem('token')
+  if (!token) {
+    ElMessage.warning('请先登录')
+    router.push('/login')
     return
   }
   try {
-    const promises = ids.map(id => axios.get(`/api/village/${id}`))
-    const responses = await Promise.all(promises)
-    favoritesList.value = responses.map(res => res.data)
-    usingMockData.value = false
+    const res = await axios.get('/api/user/favorites')
+    favoritesList.value = res.data
   } catch (error) {
-    console.error('加载收藏失败，使用模拟数据', error)
-    usingMockData.value = true
-    // 模拟数据（根据 id 生成示例，实际可省略或提示）
-    ElMessage.warning('加载部分收藏失败，显示示例数据')
+    console.error('加载收藏失败', error)
+    ElMessage.error('加载收藏失败，请检查后端接口')
     favoritesList.value = []
   }
-}
-
-const removeFavorite = (id) => {
-  const ids = getFavoriteIds()
-  const newIds = ids.filter(i => i !== id)
-  localStorage.setItem('favoriteVillages', JSON.stringify(newIds))
-  favoritesList.value = favoritesList.value.filter(v => v.id !== id)
-  ElMessage.success('已取消收藏')
-}
-
-const goDetail = (id) => {
-  router.push(`/village/${id}`)
 }
 
 onMounted(() => {
@@ -101,119 +153,94 @@ onMounted(() => {
 
 <style scoped>
 .favorites-page {
-  padding: 24px;
+  padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
 }
-
 .header {
   display: flex;
   align-items: baseline;
   gap: 20px;
   flex-wrap: wrap;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
   border-left: 5px solid #e67e22;
   padding-left: 20px;
 }
-
 .header h1 {
   font-size: 1.8rem;
   font-weight: 600;
   color: #2b5e2b;
-  margin: 0;
 }
-
 .count {
   background: #e8dccc;
   padding: 4px 12px;
   border-radius: 40px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: #5a3e2b;
+  font-size: 14px;
 }
-
 .village-card {
+  cursor: pointer;
+  transition: all 0.25s ease;
   border-radius: 24px;
   overflow: hidden;
-  transition: all 0.25s ease;
-  border: none;
   background: rgba(255, 255, 245, 0.8);
   backdrop-filter: blur(4px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
 }
-
 .village-card:hover {
   transform: translateY(-5px);
   box-shadow: 0 20px 30px -12px rgba(43, 94, 43, 0.15);
 }
-
 .card-content {
   display: flex;
   gap: 16px;
-  cursor: pointer;
-  padding: 16px;
+  padding: 12px;
 }
-
 .village-img {
-  width: 110px;
-  height: 110px;
+  width: 100px;
+  height: 100px;
   object-fit: cover;
-  border-radius: 20px;
-  transition: transform 0.3s;
+  border-radius: 16px;
 }
-
-.village-card:hover .village-img {
-  transform: scale(1.02);
-}
-
 .info h3 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin: 0 0 6px 0;
+  margin: 0 0 5px;
+  font-size: 1.2rem;
   color: #2b5e2b;
 }
-
-.province {
-  display: inline-block;
-  background: #f0e7db;
-  border-radius: 40px;
-  padding: 4px 14px;
-  font-size: 0.75rem;
-  color: #8b5a2b;
-  margin-bottom: 8px;
+.product {
+  color: #e67e22;
+  font-weight: bold;
+  margin: 5px 0;
 }
-
-.desc {
-  font-size: 0.85rem;
-  color: #5a5a4a;
-  line-height: 1.4;
+.location {
+  font-size: 12px;
+  color: #888;
 }
-
-.card-actions {
-  text-align: right;
-  padding: 0 16px 16px 0;
+.baike-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 8px;
+  padding: 0 12px;
 }
-
+.card-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+}
+.favorite-icon {
+  font-size: 24px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.favorite-icon:hover {
+  transform: scale(1.1);
+}
+.pagination-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
 .empty {
   text-align: center;
   padding: 80px 20px;
-  background: rgba(255, 255, 245, 0.5);
-  border-radius: 32px;
-}
-
-@media (max-width: 768px) {
-  .favorites-page {
-    padding: 16px;
-  }
-  .header h1 {
-    font-size: 1.4rem;
-  }
-  .village-img {
-    width: 70px;
-    height: 70px;
-  }
-  .info h3 {
-    font-size: 1rem;
-  }
 }
 </style>
