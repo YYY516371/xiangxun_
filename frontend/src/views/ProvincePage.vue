@@ -138,6 +138,9 @@ import * as echarts from 'echarts'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { Star, StarFilled } from '@element-plus/icons-vue'
+import { useUserStore } from '@/stores/user'
+const userStore = useUserStore()
+const isLoggedIn = computed(() => !!userStore.token)
 
 const route = useRoute()
 const router = useRouter()
@@ -207,16 +210,25 @@ const parseBaikeUrls = (urls) => {
 
 const isFavorited = (id) => favoriteIds.value.includes(id)
 
-const toggleFavorite = (id) => {
-  const index = favoriteIds.value.indexOf(id)
-  if (index !== -1) {
-    favoriteIds.value.splice(index, 1)
-    ElMessage.success('已取消收藏')
-  } else {
-    favoriteIds.value.push(id)
-    ElMessage.success('已添加收藏')
+const toggleFavorite = async (id) => {
+  if (!isLoggedIn.value) {
+    ElMessage.warning('请先登录')
+    router.push('/login')
+    return
   }
-  localStorage.setItem('favoriteVillages', JSON.stringify(favoriteIds.value))
+  try {
+    if (favoriteIds.value.includes(id)) {
+      await axios.post(`/api/villages/${id}/unfavorite`)
+      favoriteIds.value = favoriteIds.value.filter(i => i !== id)
+      ElMessage.success('已取消收藏')
+    } else {
+      await axios.post(`/api/villages/${id}/favorite`)
+      favoriteIds.value.push(id)
+      ElMessage.success('收藏成功')
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '操作失败')
+  }
 }
 
 const openBaike = (village, idx) => {
@@ -434,12 +446,22 @@ watch(allVillages, () => {
   }
 })
 
+const loadFavorites = async () => {
+  if (!isLoggedIn.value) return
+  try {
+    const res = await axios.get('/api/user/favorites')
+    // 假设后端返回的是村庄对象数组，提取 id
+    favoriteIds.value = res.data.map(v => v.id)
+  } catch (error) {
+    console.error('加载收藏列表失败', error)
+    favoriteIds.value = []
+  }
+}
+
 // ----- 生命周期 -----
-onMounted(() => {
-  loadVillages()
-  // 加载收藏列表
-  const favs = JSON.parse(localStorage.getItem('favoriteVillages') || '[]')
-  favoriteIds.value = favs
+onMounted(async () => {
+  await loadVillages()
+  await loadFavorites()     // 从后端加载收藏
   window.addEventListener('resize', () => pieChart?.resize())
 })
 </script>
