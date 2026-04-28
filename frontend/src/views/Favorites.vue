@@ -6,10 +6,10 @@
       <div class="count">{{ favoritesList.length }} 个村庄</div>
     </div>
 
-    <el-row :gutter="20">
-      <el-col :span="12" v-for="v in paginatedFavorites" :key="v.id" style="margin-bottom: 20px;">
+    <!-- CSS Grid 固定两列布局 -->
+    <div class="card-grid">
+      <div v-for="v in paginatedFavorites" :key="v.id" class="card-item">
         <el-card class="village-card">
-          <!-- 卡片主体（点击跳转详情） -->
           <div class="card-content" @click="goDetail(v.id)">
             <img :src="v.image_url || defaultImage" class="village-img" />
             <div class="info">
@@ -19,36 +19,31 @@
             </div>
           </div>
 
-          <!-- 百科链接按钮组 -->
           <div class="baike-buttons">
-            <el-button link type="primary" size="small" @click.stop="openBaike(v, 0)">
-              📖 村庄简介
-            </el-button>
-            <el-button link type="success" size="small" @click.stop="openBaike(v, 1)">
-              🛒 产品介绍
-            </el-button>
+            <el-button link type="primary" size="small" @click.stop="openBaike(v, 0)">📖 村庄简介</el-button>
+            <el-button link type="success" size="small" @click.stop="openBaike(v, 1)">🛒 产品介绍</el-button>
           </div>
 
-          <!-- 收藏图标（可取消收藏） -->
           <div class="card-footer">
             <el-icon class="favorite-icon" color="#f56c6c" @click.stop="removeFavorite(v.id)">
               <StarFilled />
             </el-icon>
           </div>
         </el-card>
-      </el-col>
-    </el-row>
+      </div>
+    </div>
 
     <!-- 分页组件 -->
-    <div class="pagination-row" v-if="favoritesList.length > pageSize">
-      <el-pagination
-        v-model:current-page="currentPage"
-        :page-size="pageSize"
-        :total="favoritesList.length"
-        layout="prev, pager, next"
-        @current-change="handleCurrentChange"
-      />
-    </div>
+    <div class="pagination-row" v-if="favoritesList.length > 0">
+  <el-pagination
+    v-model:current-page="currentPage"
+    v-model:page-size="pageSize"
+    :page-sizes="[ 8, 16, 24, 32]"
+    :total="favoritesList.length"
+    layout="total, sizes, prev, pager, next"
+    @size-change="handleSizeChange"
+  />
+</div>
 
     <div v-if="favoritesList.length === 0" class="empty">
       <el-empty description="暂无收藏，去首页添加吧" />
@@ -63,20 +58,20 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { StarFilled } from '@element-plus/icons-vue'
 import axios from 'axios'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 const favoritesList = ref([])
 const currentPage = ref(1)
-const pageSize = ref(6)   // 每页显示6个
+const pageSize = ref(8)   // 每页8条
 const defaultImage = 'https://picsum.photos/id/104/150/150'
 
-// 分页数据
 const paginatedFavorites = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
   return favoritesList.value.slice(start, start + pageSize.value)
 })
 
-// 简化村名（去除区镇前缀）
 const simplifyName = (fullName) => {
   if (!fullName) return ''
   let name = fullName
@@ -87,13 +82,11 @@ const simplifyName = (fullName) => {
   return name || fullName
 }
 
-// 解析百科链接
 const parseBaikeUrls = (urls) => {
   if (!urls || urls === 'NaN') return []
   return urls.split(/[,|]/).map(u => u.trim()).filter(u => u.startsWith('http'))
 }
 
-// 打开百科
 const openBaike = (village, index) => {
   const urls = parseBaikeUrls(village.baike_urls)
   const url = urls[index]
@@ -104,34 +97,37 @@ const openBaike = (village, index) => {
   }
 }
 
-// 取消收藏
 const removeFavorite = async (id) => {
+  if (!id) {
+    ElMessage.error('村庄ID无效')
+    return
+  }
   try {
     await axios.post(`/api/villages/${id}/unfavorite`)
     favoritesList.value = favoritesList.value.filter(v => v.id !== id)
     ElMessage.success('已取消收藏')
-    // 如果当前页没有数据了，且不是第一页，则回退一页
     if (paginatedFavorites.value.length === 0 && currentPage.value > 1) {
       currentPage.value--
     }
   } catch (error) {
     console.error('取消收藏失败', error)
-    ElMessage.error('操作失败，请稍后重试')
+    ElMessage.error(error.response?.data?.message || '操作失败')
   }
 }
 
-// 跳转详情
 const goDetail = (id) => router.push(`/village/${id}`)
 
-// 分页切换
 const handleCurrentChange = (val) => {
   currentPage.value = val
 }
 
-// 加载收藏列表（需要从后端获取完整的村庄数据）
+const handleSizeChange = (val) => {
+  pageSize.value = val
+  currentPage.value = 1   // 切换每页数量时重置到第一页
+}
+
 const loadFavorites = async () => {
-  const token = localStorage.getItem('token')
-  if (!token) {
+  if (!userStore.token) {
     ElMessage.warning('请先登录')
     router.push('/login')
     return
@@ -153,7 +149,7 @@ onMounted(() => {
 
 <style scoped>
 .favorites-page {
-  padding: 20px;
+  padding: 20px 10px;
   max-width: 1200px;
   margin: 0 auto;
 }
@@ -177,6 +173,15 @@ onMounted(() => {
   border-radius: 40px;
   font-size: 14px;
 }
+/* CSS Grid 固定两列 */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+.card-item {
+  width: 100%;
+}
 .village-card {
   cursor: pointer;
   transition: all 0.25s ease;
@@ -184,6 +189,9 @@ onMounted(() => {
   overflow: hidden;
   background: rgba(255, 255, 245, 0.8);
   backdrop-filter: blur(4px);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 .village-card:hover {
   transform: translateY(-5px);
@@ -193,6 +201,7 @@ onMounted(() => {
   display: flex;
   gap: 16px;
   padding: 12px;
+  flex: 1;
 }
 .village-img {
   width: 100px;
@@ -242,5 +251,10 @@ onMounted(() => {
 .empty {
   text-align: center;
   padding: 80px 20px;
+}
+@media (max-width: 768px) {
+  .card-grid {
+    grid-template-columns: 1fr; /* 移动端单列 */
+  }
 }
 </style>

@@ -39,7 +39,7 @@ const loading = ref(false)
 const formRef = ref(null)
 
 // 临时开关：true = 使用模拟存储，false = 调用真实后端
-const useMock = ref(true)  // 后端就绪后改为 false
+const useMock = ref(false)  // 现使用真实后端，如需要可改为 true
 
 const form = reactive({
   username: '',
@@ -106,18 +106,18 @@ const submit = async () => {
         mockRegister()
       }
     } else {
-      // 真实后端模式
+      // 真实后端模式（接口路径与 app.py 一致）
       if (isLogin.value) {
-        const res = await axios.post('/api/auth/login', {
+        const res = await axios.post('/api/login', {
           username: form.username,
           password: form.password
         })
         userStore.setToken(res.data.token)
-        userStore.setUser(res.data.user)
+        userStore.setUser({ username: res.data.username })
         ElMessage.success('登录成功')
         router.push('/')
       } else {
-        await axios.post('/api/auth/register', {
+        await axios.post('/api/register', {
           username: form.username,
           password: form.password
         })
@@ -142,6 +142,7 @@ const toggleMode = () => {
 </script>
 
 <style scoped>
+/* 样式部分完全保持不变 */
 .login-page {
   position: relative;
   display: flex;
@@ -152,7 +153,6 @@ const toggleMode = () => {
   overflow: hidden;
 }
 
-/* 背景装饰（自然元素） */
 .bg-decoration {
   position: absolute;
   width: 100%;

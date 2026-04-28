@@ -44,7 +44,7 @@
             <div class="info">
               <h3>{{ simplifyName(v.name) }}</h3>
               <p class="product">{{ v.product_name || '特色产品' }}</p>
-              <p class="location">{{ v.city }} · {{ v.county || '' }}</p>
+              <p class="location">{{ v.province }} · {{ v.city }} · {{ v.county || '' }}</p>
             </div>
           </div>
 
@@ -60,8 +60,8 @@
 
           <!-- 收藏图标 -->
           <div class="card-footer">
-            <el-icon class="favorite-icon" :color="isFavorited(v.id) ? '#f56c6c' : '#999'" @click.stop="toggleFavorite(v.id)">
-              <StarFilled v-if="isFavorited(v.id)" />
+            <el-icon class="favorite-icon" :color="favoriteIds.includes(v.id) ? '#f56c6c' : '#999'" @click.stop="toggleFavorite(v.id)">
+              <StarFilled v-if="favoriteIds.includes(v.id)" />
               <Star v-else />
             </el-icon>
           </div>
@@ -89,16 +89,21 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { Star, StarFilled } from '@element-plus/icons-vue'
 
 const router = useRouter()
+const userStore = useUserStore()
+const isLoggedIn = computed(() => !!userStore.token)
 
+// 预设产业列表（用于“其他”归类）
 const predefinedIndustries = ['茶', '果', '药', '渔', '蔬', '花', '畜', '粮']
+
 const allVillages = ref([])
 const usingMockData = ref(false)
-const favoriteIds = ref([])
+const favoriteIds = ref([])          // 收藏的村庄 ID 列表（响应式）
 const defaultImage = 'https://picsum.photos/id/104/150/150'
 
 // 筛选状态
@@ -136,26 +141,18 @@ const parseBaikeUrls = (urls) => {
   return urls.split(/[,|]/).map(u => u.trim()).filter(u => u.startsWith('http'))
 }
 
-const isFavorited = (id) => favoriteIds.value.includes(id)
-const toggleFavorite = (id) => {
-  const index = favoriteIds.value.indexOf(id)
-  if (index !== -1) {
-    favoriteIds.value.splice(index, 1)
-    ElMessage.success('已取消收藏')
-  } else {
-    favoriteIds.value.push(id)
-    ElMessage.success('已添加收藏')
-  }
-  localStorage.setItem('favoriteVillages', JSON.stringify(favoriteIds.value))
-}
-
+// 打开百度百科
 const openBaike = (village, index) => {
   const urls = parseBaikeUrls(village.baike_urls)
   const url = urls[index]
-  if (url) window.open(url, '_blank')
-  else ElMessage.warning(index === 0 ? '暂无村庄简介' : '暂无产品介绍')
+  if (url) {
+    window.open(url, '_blank')
+  } else {
+    ElMessage.warning(index === 0 ? '暂无村庄简介' : '暂无产品介绍')
+  }
 }
 
+// 构建全国地区级联选项
 const buildRegionOptions = () => {
   const provinceMap = new Map()
   allVillages.value.forEach(v => {
@@ -191,6 +188,7 @@ const buildRegionOptions = () => {
   return options
 }
 
+// 加载全国村庄数据
 const loadVillages = async () => {
   try {
     const res = await axios.get('/api/villages')
@@ -202,6 +200,40 @@ const loadVillages = async () => {
     usingMockData.value = true
     allVillages.value = []
     regionOptions.value = []
+  }
+}
+
+// 加载用户收藏列表（从后端）
+const loadFavorites = async () => {
+  if (!isLoggedIn.value) return
+  try {
+    const res = await axios.get('/api/user/favorites')
+    favoriteIds.value = res.data.map(v => v.id)
+  } catch (error) {
+    console.error('加载收藏列表失败', error)
+    favoriteIds.value = []
+  }
+}
+
+// 切换收藏（调用真实后端接口）
+const toggleFavorite = async (id) => {
+  if (!isLoggedIn.value) {
+    ElMessage.warning('请先登录')
+    router.push('/login')
+    return
+  }
+  try {
+    if (favoriteIds.value.includes(id)) {
+      await axios.post(`/api/villages/${id}/unfavorite`)
+      favoriteIds.value = favoriteIds.value.filter(i => i !== id)
+      ElMessage.success('已取消收藏')
+    } else {
+      await axios.post(`/api/villages/${id}/favorite`)
+      favoriteIds.value.push(id)
+      ElMessage.success('收藏成功')
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '操作失败')
   }
 }
 
@@ -234,7 +266,9 @@ const subCategoryList = computed(() => {
   return Array.from(cats).sort()
 })
 
-const onIndustryChange = () => { selectedSubCategory.value = '' }
+const onIndustryChange = () => {
+  selectedSubCategory.value = ''
+}
 
 const filterByRegion = (villages, regionPath) => {
   if (!regionPath.length) return villages
@@ -254,14 +288,22 @@ const filterByRegion = (villages, regionPath) => {
   })
 }
 
+// 基础筛选后的村庄（产业+产品+地区）
 const filteredVillages = computed(() => {
   let result = allVillages.value
-  if (selectedIndustry.value) result = getBaseVillagesByIndustry(selectedIndustry.value)
-  if (selectedSubCategory.value) result = result.filter(v => v.sub_category === selectedSubCategory.value)
-  if (selectedRegion.value.length) result = filterByRegion(result, selectedRegion.value)
+  if (selectedIndustry.value) {
+    result = getBaseVillagesByIndustry(selectedIndustry.value)
+  }
+  if (selectedSubCategory.value) {
+    result = result.filter(v => v.sub_category === selectedSubCategory.value)
+  }
+  if (selectedRegion.value.length) {
+    result = filterByRegion(result, selectedRegion.value)
+  }
   return result
 })
 
+// 分页后的村庄
 const paginatedVillages = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
   return filteredVillages.value.slice(start, start + pageSize.value)
@@ -272,14 +314,22 @@ watch([selectedIndustry, selectedSubCategory, selectedRegion], () => {
   currentPage.value = 1
 })
 
-const handleSizeChange = (val) => { pageSize.value = val; currentPage.value = 1 }
-const handleCurrentChange = (val) => { currentPage.value = val }
+const handleSizeChange = (val) => {
+  pageSize.value = val
+  currentPage.value = 1
+}
+const handleCurrentChange = (val) => {
+  currentPage.value = val
+}
+
 const goDetail = (id) => router.push(`/village/${id}`)
 
+// 生命周期
 onMounted(() => {
   loadVillages()
-  const favs = JSON.parse(localStorage.getItem('favoriteVillages') || '[]')
-  favoriteIds.value = favs
+  if (isLoggedIn.value) {
+    loadFavorites()
+  }
 })
 </script>
 
@@ -331,6 +381,7 @@ onMounted(() => {
 }
 .info h3 {
   margin: 0 0 5px;
+  font-size: 1.2rem;
   color: #2b5e2b;
 }
 .product {
