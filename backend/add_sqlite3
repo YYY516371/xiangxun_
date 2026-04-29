@@ -1,0 +1,7 @@
+import sqlite3
+conn = sqlite3.connect('xiangxun.db')
+c = conn.cursor()
+c.execute('DELETE FROM comment_likes')
+conn.commit()
+conn.close()
+print("已清空 comment_likes 表，主评论的点赞记录已清除")

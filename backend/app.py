@@ -25,7 +25,7 @@ def init_db():
         password TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
-    # 用户会话（简单版，用token）
+    # 用户会话
     c.execute('''CREATE TABLE IF NOT EXISTS sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -46,7 +46,7 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (user_id, village_id)
     )''')
-    # 点赞表（村庄点赞）
+    # 点赞表
     c.execute('''CREATE TABLE IF NOT EXISTS village_likes (
         user_id INTEGER NOT NULL,
         village_id INTEGER NOT NULL,
@@ -55,13 +55,14 @@ def init_db():
     )''')
     # 评论表
     c.execute('''CREATE TABLE IF NOT EXISTS comments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        village_id INTEGER NOT NULL,
-        user_id INTEGER NOT NULL,
-        content TEXT NOT NULL,
-        like_count INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )''')
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    village_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    like_count INTEGER DEFAULT 0,
+    parent_id INTEGER DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)''')
     # 评论点赞表
     c.execute('''CREATE TABLE IF NOT EXISTS comment_likes (
         user_id INTEGER NOT NULL,
@@ -774,12 +775,13 @@ def add_comment():
     data = request.get_json()
     village_id = data.get('village_id')
     content = data.get('content')
+    parent_id = data.get('parent_id')
     if not village_id or not content:
         return jsonify({'error': 'Missing fields'}), 400
     db = get_db()
     c = db.cursor()
-    c.execute('INSERT INTO comments (village_id, user_id, content) VALUES (?, ?, ?)',
-              (village_id, request.user_id, content))
+    c.execute('INSERT INTO comments (village_id, user_id, content, parent_id) VALUES (?, ?, ?, ?)',
+              (village_id, request.user_id, content, parent_id))
     db.commit()
     comment_id = c.lastrowid
     c.execute('SELECT username FROM users WHERE id = ?', (request.user_id,))
@@ -791,8 +793,37 @@ def add_comment():
         'username': user['username'],
         'content': content,
         'like_count': 0,
+        'parent_id': parent_id,
         'created_at': datetime.now().isoformat()
     }), 201
+
+@app.route('/api/comments/village/<int:id>', methods=['GET'])
+def get_comments_for_village(id):
+    db = get_db()
+    c = db.cursor()
+    current_user_id = get_current_user_id()
+    if current_user_id:
+        c.execute('''
+            SELECT c.id, c.user_id, c.content, c.like_count, c.created_at,
+                   c.parent_id, u.username,
+                   EXISTS(SELECT 1 FROM comment_likes cl WHERE cl.comment_id = c.id AND cl.user_id = ?) as user_liked
+            FROM comments c
+            JOIN users u ON c.user_id = u.id
+            WHERE c.village_id = ?
+            ORDER BY c.created_at ASC
+        ''', (current_user_id, id))
+    else:
+        c.execute('''
+            SELECT c.id, c.user_id, c.content, c.like_count, c.created_at,
+                   c.parent_id, u.username,
+                   0 as user_liked
+            FROM comments c
+            JOIN users u ON c.user_id = u.id
+            WHERE c.village_id = ?
+            ORDER BY c.created_at ASC
+        ''', (id,))
+    comments = [dict(row) for row in c.fetchall()]
+    return jsonify(comments)
 
 @app.route('/api/comments/<int:id>/like', methods=['POST'])
 @login_required

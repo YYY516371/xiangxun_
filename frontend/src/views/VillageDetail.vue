@@ -2,7 +2,7 @@
   <div class="village-detail" v-loading="loading">
     <div class="header">
       <el-button @click="$router.back()" type="primary" plain>← 返回</el-button>
-      <el-button @click="goRanking" type="info" plain>🔥 热门排行榜</el-button>
+      <el-button @click="$router.push('/ranking')" type="info" plain>🔥 排行榜</el-button>
     </div>
 
     <div v-if="village" class="content">
@@ -14,10 +14,12 @@
         </div>
         <div class="action-buttons">
           <el-button :type="isLiked ? 'danger' : 'default'" @click="toggleLike" :loading="likeLoading">
-            <span class="action-icon">{{ isLiked ? '❤️' : '🤍' }}</span> 点赞
+            <el-icon><StarFilled v-if="isLiked" /><Star v-else /></el-icon>
+            {{ isLiked ? '已点赞' : '点赞' }}
           </el-button>
-          <el-button @click="toggleFavorite" :loading="favLoading">
-            <span class="action-icon">{{ isFavorited ? '⭐' : '☆' }}</span> 收藏
+          <el-button :type="isFavorited ? 'warning' : 'default'" @click="toggleFavorite" :loading="favLoading">
+            <el-icon><Collection /></el-icon>
+            {{ isFavorited ? '已收藏' : '收藏' }}
           </el-button>
           <el-button :type="isWanted ? 'success' : 'default'" @click="toggleWant" :loading="wantLoading">
             <el-icon><Flag /></el-icon>
@@ -53,7 +55,7 @@
                 <span class="comment-like" @click="toggleCommentLike(comment)">
                   {{ comment.userLiked ? '❤️' : '🤍' }} {{ comment.likeCount }}
                 </span>
-                <span class="comment-reply" @click="startReply(comment)">回复</span>
+                <span class="comment-reply" @click="startReply(comment.id)">回复</span>
               </div>
             </div>
             <div class="comment-content">{{ comment.content }}</div>
@@ -62,7 +64,7 @@
             <div v-if="comment.replies && comment.replies.length" class="replies">
               <div v-for="reply in (comment.showAllReplies ? comment.replies : comment.replies.slice(0, 3))" :key="reply.id" class="reply-item">
                 <div class="reply-meta">
-                  <strong>{{ reply.username }}</strong>
+                  <strong class="reply-user">{{ reply.username }}</strong>
                   <span class="reply-time">{{ formatDate(reply.created_at) }}</span>
                   <span class="reply-like" @click="toggleCommentLike(reply)">{{ reply.userLiked ? '❤️' : '🤍' }} {{ reply.likeCount }}</span>
                 </div>
@@ -76,8 +78,9 @@
             </div>
 
             <!-- 回复输入框 -->
-            <div v-if="replyingTo === comment.id" class="reply-input">
-              <el-input v-model="replyContent" type="textarea" rows="2" placeholder="写下你的回复..." />
+            <div v-if="replyingToId === comment.id" class="reply-input">
+              <div class="reply-to">回复 {{ comment.username }}</div>
+              <el-input v-model="replyContent" type="textarea" rows="2" :placeholder="`回复 ${comment.username}`" />
               <div class="reply-actions">
                 <el-button size="small" @click="cancelReply">取消</el-button>
                 <el-button size="small" type="primary" @click="submitReply(comment.id)" :loading="replyLoading">回复</el-button>
@@ -114,7 +117,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Flag } from '@element-plus/icons-vue'
+import { Star, StarFilled, Collection, Flag } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { useUserStore } from '@/stores/user'
 
@@ -125,6 +128,7 @@ const userStore = useUserStore()
 
 const village = ref(null)
 const loading = ref(false)
+const storyLoading = ref(false)
 
 // 交互状态
 const isLiked = ref(false)
@@ -142,7 +146,7 @@ const showMoreComments = ref(false)
 const allCommentsLoaded = ref(false)
 
 // 回复相关
-const replyingTo = ref(null)
+const replyingToId = ref(null)
 const replyContent = ref('')
 const replyLoading = ref(false)
 
@@ -257,12 +261,33 @@ const toggleWant = async () => {
   }
 }
 
-// 加载评论（支持嵌套回复）
+// 构建评论树（依赖 parent_id）
+const buildCommentTree = (flatList) => {
+  const map = new Map()
+  const roots = []
+  flatList.forEach(item => {
+    const likeCount = Number(item.like_count) || 0
+    map.set(item.id, { ...item, likeCount, replies: [], showAllReplies: false })
+  })
+  flatList.forEach(item => {
+    const node = map.get(item.id)
+    if (item.parent_id && map.has(item.parent_id)) {
+      map.get(item.parent_id).replies.push(node)
+    } else {
+      roots.push(node)
+    }
+  })
+  roots.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  return roots
+}
+
+// 加载评论
 const loadComments = async (loadAll = false) => {
   try {
     const params = loadAll ? {} : { limit: 5 }
-    const res = await axios.get(`/api/villages/${villageId}/comments`, { params })
-    let flatComments = res.data
+    const res = await axios.get(`/api/comments/village/${villageId}`, { params })
+    const flatComments = res.data
+    // 构建嵌套树
     const buildTree = (items, parentId = null) => {
       return items.filter(i => i.parent_id === parentId).map(i => ({
         ...i,
@@ -275,23 +300,10 @@ const loadComments = async (loadAll = false) => {
     allCommentsLoaded.value = loadAll
   } catch (error) {
     console.error('加载评论失败', error)
-    // 模拟数据（用于演示）
-    loadMockComments()
   }
 }
 
-const loadMockComments = () => {
-  const stored = JSON.parse(localStorage.getItem(`comments_${villageId}`) || '[]')
-  comments.value = stored.map(c => ({
-    ...c,
-    replies: (c.replies || []).map(r => ({ ...r, showAllReplies: false })),
-    showAllReplies: false
-  }))
-}
-
-const loadAllComments = async () => {
-  await loadComments(true)
-}
+const loadAllComments = () => loadComments(true)
 
 // 发表顶级评论
 const submitComment = async () => {
@@ -305,44 +317,45 @@ const submitComment = async () => {
     return
   }
   commentLoading.value = true
+  const tempId = Date.now()
+  const newCommentObj = {
+    id: tempId,
+    username: userStore.user?.username || '我',
+    content: newComment.value,
+    created_at: new Date().toISOString(),
+    likeCount: 0,
+    userLiked: false,
+    parent_id: null,
+    replies: [],
+    showAllReplies: false
+  }
+  comments.value.unshift(newCommentObj)
+  newComment.value = ''
+  ElMessage.success('评论成功')
   try {
-    const newCommentObj = {
-      id: Date.now(),
-      username: userStore.user?.username || '我',
-      content: newComment.value,
-      created_at: new Date().toISOString(),
-      likeCount: 0,
-      userLiked: false,
-      replies: [],
-      showAllReplies: false,
-      parent_id: null
-    }
-    comments.value.unshift(newCommentObj)
-    newComment.value = ''
-    ElMessage.success('评论成功')
     await axios.post('/api/comments', {
       village_id: Number(villageId),
       content: newCommentObj.content,
       parent_id: null
     }).catch(err => console.error('后端保存失败', err))
   } catch (error) {
-    if (comments.value[0]?.id === newCommentObj.id) comments.value.shift()
-    ElMessage.error(error.response?.data?.message || '评论失败')
+    comments.value = comments.value.filter(c => c.id !== tempId)
+    ElMessage.error('评论保存失败，请重试')
   } finally {
     commentLoading.value = false
   }
 }
 
 // 回复相关
-const startReply = (comment) => {
-  replyingTo.value = comment.id
+const startReply = (commentId) => {
+  replyingToId.value = commentId
   replyContent.value = ''
 }
 const cancelReply = () => {
-  replyingTo.value = null
+  replyingToId.value = null
   replyContent.value = ''
 }
-const submitReply = async (parentCommentId) => {
+const submitReply = async (parentId) => {
   if (!replyContent.value.trim()) {
     ElMessage.warning('请输入回复内容')
     return
@@ -354,37 +367,17 @@ const submitReply = async (parentCommentId) => {
   }
   replyLoading.value = true
   try {
-    const newReply = {
-      id: Date.now(),
-      username: userStore.user?.username || '我',
-      content: replyContent.value,
-      created_at: new Date().toISOString(),
-      likeCount: 0,
-      userLiked: false,
-      parent_id: parentCommentId
-    }
-    const addReply = (nodes) => {
-      for (let node of nodes) {
-        if (node.id === parentCommentId) {
-          if (!node.replies) node.replies = []
-          node.replies.push(newReply)
-          return true
-        } else if (node.replies && node.replies.length) {
-          if (addReply(node.replies)) return true
-        }
-      }
-      return false
-    }
-    addReply(comments.value)
-    cancelReply()
-    ElMessage.success('回复成功')
     await axios.post('/api/comments', {
       village_id: Number(villageId),
-      content: newReply.content,
-      parent_id: parentCommentId
-    }).catch(err => console.error('后端保存回复失败', err))
+      content: replyContent.value,
+      parent_id: parentId
+    })
+    // 回复成功后重新加载评论列表（从后端获取最新数据）
+    await loadComments(false)
+    cancelReply()
+    ElMessage.success('回复成功')
   } catch (error) {
-    ElMessage.error('回复失败，请重试')
+    ElMessage.error(error.response?.data?.message || '回复失败')
   } finally {
     replyLoading.value = false
   }
@@ -397,8 +390,11 @@ const toggleCommentLike = async (comment) => {
     router.push('/login')
     return
   }
+  // 确保 likeCount 是数字
+  comment.likeCount = Number(comment.likeCount) || 0
   const originalLiked = comment.userLiked
   const originalCount = comment.likeCount
+  // 乐观更新
   comment.userLiked = !originalLiked
   comment.likeCount += comment.userLiked ? 1 : -1
 
@@ -406,9 +402,14 @@ const toggleCommentLike = async (comment) => {
     const url = originalLiked ? `/api/comments/${comment.id}/unlike` : `/api/comments/${comment.id}/like`
     await axios.post(url)
   } catch (error) {
+    // 回滚
     comment.userLiked = originalLiked
     comment.likeCount = originalCount
-    ElMessage.error('操作失败')
+    // 如果是 400 错误且后端返回 "Already liked"，尝试刷新评论列表以同步状态
+    if (error.response?.status === 400 && error.response?.data?.error === 'Already liked') {
+      await loadComments(allCommentsLoaded.value)
+    }
+    ElMessage.error(error.response?.data?.message || '操作失败')
   }
 }
 
@@ -442,9 +443,9 @@ const loadVillage = async () => {
   }
 }
 
-const goRanking = () => router.push('/ranking')
 const goLogin = () => router.push('/login')
 
+// 监听路由参数变化
 watch(
   () => route.params.id,
   async (newId, oldId) => {
@@ -468,12 +469,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* 样式与原有完全相同，此处省略（保留之前完整的样式） */
-/* 请保留之前完整样式，由于长度限制不再重复粘贴，确保样式包含所有新增类的定义 */
-</style>
-
-<style scoped>
-/* ========== 原有样式保留 ========== */
+/* 保留原有所有样式，在此基础上添加回复相关样式 */
 .village-detail {
   max-width: 1000px;
   margin: 40px auto;
@@ -509,10 +505,6 @@ onMounted(async () => {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
-}
-.action-icon {
-  font-size: 1.2rem;
-  margin-right: 4px;
 }
 .image-wrapper {
   margin: 24px 0;
@@ -551,22 +543,6 @@ onMounted(async () => {
   padding-top: 12px;
   border-top: 1px dashed #ddd0bc;
 }
-.story-content {
-  background: #fdf9ef;
-  border-radius: 24px;
-  padding: 24px;
-  font-size: 1rem;
-  line-height: 1.7;
-  color: #4a3b2a;
-  border-left: 6px solid #e67e22;
-}
-.story-placeholder {
-  background: #faf5ea;
-  border-radius: 24px;
-  padding: 40px 24px;
-  text-align: center;
-  color: #9b8568;
-}
 .comments-section {
   background: #fefcf7;
 }
@@ -583,6 +559,7 @@ onMounted(async () => {
 }
 .comment-user {
   font-weight: bold;
+  color: #2b5e2b;
 }
 .comment-time {
   font-size: 12px;
@@ -621,6 +598,10 @@ onMounted(async () => {
   font-size: 12px;
   margin-bottom: 4px;
 }
+.reply-user {
+  font-weight: bold;
+  color: #8b8b8b;
+}
 .reply-time {
   font-size: 12px;
   color: #999;
@@ -645,16 +626,16 @@ onMounted(async () => {
   margin-top: 12px;
   margin-left: 30px;
 }
+.reply-to {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 6px;
+}
 .reply-actions {
   margin-top: 8px;
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-}
-.comment-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 6px;
 }
 .comment-empty {
   text-align: center;
