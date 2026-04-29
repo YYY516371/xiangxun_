@@ -29,10 +29,10 @@
         <!-- 登录/用户菜单 -->
         <div class="user-menu" v-if="userStore.token">
           <el-dropdown @command="handleCommand">
-            <span class="el-dropdown-link">
-              {{ userStore.user?.username || '用户' }}
-              <el-icon><ArrowDown /></el-icon>
-            </span>
+           <span class="el-dropdown-link">
+  {{ userStore.user?.nickname || userStore.user?.username || '用户' }}
+  <el-icon><ArrowDown /></el-icon>
+</span>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="profile">个人中心</el-dropdown-item>
@@ -55,6 +55,8 @@
 
 <script setup>
 import { useUserStore } from './stores/user'
+import { onMounted } from 'vue'
+import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, Search } from '@element-plus/icons-vue'
@@ -105,6 +107,21 @@ const handleCommand = (command) => {
     router.push('/')
   }
 }
+// 页面加载时获取用户详细信息（昵称、头像等）
+onMounted(async () => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    try {
+      const res = await axios.get('/api/user/profile')
+      userStore.setUser({
+        ...userStore.user,
+        ...res.data
+      })
+    } catch (error) {
+      console.error('获取用户信息失败', error)
+    }
+  }
+})
 </script>
 
 <style>

@@ -80,13 +80,13 @@
 
           <!-- 百科链接按钮组 -->
           <div class="baike-buttons">
-            <el-button link type="primary" size="small" @click.stop="openBaike(v, 0)">
-              📖 村庄简介
-            </el-button>
-            <el-button link type="success" size="small" @click.stop="openBaike(v, 1)">
-              🛒 产品介绍
-            </el-button>
-          </div>
+          <el-button link type="primary" size="small" @click="openBaike(v, 0)">
+           📖 村庄简介
+          </el-button>
+          <el-button link type="success" size="small" @click="openBaike(v, 1)">
+          🛒 产品介绍
+          </el-button>
+        </div>
 
           <!-- 收藏图标 -->
           <div class="card-footer">
@@ -231,15 +231,6 @@ const toggleFavorite = async (id) => {
   }
 }
 
-const openBaike = (village, idx) => {
-  const urls = parseBaikeUrls(village.baike_urls)
-  const url = urls[idx]
-  if (url) {
-    window.open(url, '_blank')
-  } else {
-    ElMessage.warning(idx === 0 ? '暂无村庄简介' : '暂无产品介绍')
-  }
-}
 
 const buildAreaOptions = () => {
   const cityMap = new Map()
@@ -413,6 +404,23 @@ const paginatedVillages = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
   return filteredVillages.value.slice(start, start + pageSize.value)
 })
+
+// 将 baike_urls 按竖线分割成数组，过滤无效链接
+const getBaikeLinks = (urls) => {
+  if (!urls || urls === 'NaN') return []
+  return urls.split('|').filter(u => u && u.trim().startsWith('http'))
+}
+
+// 打开百科链接，index 0 = 村庄简介，1 = 产品介绍
+const openBaike = (village, index) => {
+  const links = getBaikeLinks(village.baike_urls)
+  const url = links[index]
+  if (url) {
+    window.open(url, '_blank')
+  } else {
+    ElMessage.warning(index === 0 ? '暂无村庄简介' : '暂无产品介绍')
+  }
+}
 
 // ----- 事件 -----
 const onIndustryTypeChange = () => { selectedSubCategory.value = '' }

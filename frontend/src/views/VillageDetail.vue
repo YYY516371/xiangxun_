@@ -13,35 +13,37 @@
           <el-tag v-if="village.product_name" type="info">主打产品：{{ village.product_name }}</el-tag>
         </div>
         <div class="action-buttons">
-          <el-button :type="isLiked ? 'danger' : 'default'" @click="toggleLike" :loading="likeLoading">
-            <el-icon><StarFilled v-if="isLiked" /><Star v-else /></el-icon>
-            {{ isLiked ? '已点赞' : '点赞' }}
-          </el-button>
-          <el-button :type="isFavorited ? 'warning' : 'default'" @click="toggleFavorite" :loading="favLoading">
-            <el-icon><Collection /></el-icon>
-            {{ isFavorited ? '已收藏' : '收藏' }}
-          </el-button>
-          <el-button :type="isWanted ? 'success' : 'default'" @click="toggleWant" :loading="wantLoading">
-            <el-icon><Flag /></el-icon>
-            {{ isWanted ? '已想去' : '想去' }}
-          </el-button>
-        </div>
+  <el-button :type="isLiked ? 'danger' : 'default'" @click="toggleLike" :loading="likeLoading">
+    <span class="action-icon">{{ isLiked ? '❤️' : '🤍' }}</span>
+    {{ isLiked ? '已点赞' : '点赞' }}
+  </el-button>
+  <el-button :type="isFavorited ? 'warning' : 'default'" @click="toggleFavorite" :loading="favLoading">
+    <span class="action-icon">{{ isFavorited ? '⭐' : '☆' }}</span>
+    {{ isFavorited ? '已收藏' : '收藏' }}
+  </el-button>
+  <el-button :type="isWanted ? 'success' : 'default'" @click="toggleWant" :loading="wantLoading">
+    <el-icon><Flag /></el-icon>
+    {{ isWanted ? '已想去' : '想去' }}
+  </el-button>
+</div>
       </div>
 
       <div class="image-wrapper">
         <img src="https://picsum.photos/id/104/800/400" class="main-image" />
       </div>
-
-      <div class="section">
-        <h2>村庄简介</h2>
-        <p><strong>地址：</strong>{{ village.province }} · {{ village.city }} · {{ village.county || '' }}</p>
-        <p><strong>特产：</strong>{{ village.sub_category ? village.sub_category + ' - ' : '' }}{{ village.product_name || '无' }}</p>
-        <div v-if="village.baike_urls" class="baike-link">
-          <el-button type="primary" link @click="openBaike(village.baike_urls)">
-            📖 查看百度百科完整介绍
-          </el-button>
-        </div>
-      </div>
+<div class="section">
+  <h2>村庄简介</h2>
+  <p><strong>地址：</strong>{{ village.province }} · {{ village.city }} · {{ village.name || '' }}</p>
+  <p><strong>特产：</strong>{{ village.sub_category ? village.sub_category + ' - ' : '' }}{{ village.product_name || '无' }}</p>
+  <div class="baike-buttons">
+    <el-button type="primary" link @click="openBaike(village, 0)">
+      📖 村庄简介
+    </el-button>
+    <el-button type="success" link @click="openBaike(village, 1)" v-if="getBaikeLinks(village.baike_urls).length > 1">
+      🛒 产品介绍
+    </el-button>
+  </div>
+</div>
 
       <!-- 评论与回复区域 -->
       <div class="section comments-section">
@@ -413,14 +415,21 @@ const toggleCommentLike = async (comment) => {
   }
 }
 
+// 解析 baike_urls 字段（后端已统一为 | 分隔）
+const getBaikeLinks = (urls) => {
+  if (!urls || urls === 'NaN') return []
+  // 按竖线分割，过滤空字符串
+  return urls.split('|').filter(u => u && u.trim().startsWith('http'))
+}
+
 // 打开百度百科
-const openBaike = (url) => {
-  if (url && url !== 'NaN') {
-    let firstUrl = url.split(',')[0].split('|')[0].trim()
-    if (firstUrl.startsWith('http')) window.open(firstUrl, '_blank')
-    else ElMessage.warning('百科链接无效')
+const openBaike = (village, index) => {
+  const links = getBaikeLinks(village.baike_urls)
+  const url = links[index]
+  if (url) {
+    window.open(url, '_blank')
   } else {
-    ElMessage.warning('暂无百科链接')
+    ElMessage.warning(index === 0 ? '暂无村庄简介' : '暂无产品介绍')
   }
 }
 

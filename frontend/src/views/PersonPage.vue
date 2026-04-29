@@ -8,56 +8,105 @@
     <!-- 用户信息卡片 -->
     <el-card class="profile-card">
       <div class="profile-header">
-        <el-avatar :size="80" :src="userInfo.avatar || 'https://picsum.photos/id/64/80/80'" />
+        <div class="avatar-wrapper" @click="showAvatarUpload">
+<el-avatar 
+  :size="80" 
+  :src="userInfo.avatar || defaultAvatar" 
+  :fallback-src="defaultAvatar"
+/>
+          <div class="avatar-overlay">点击更换</div>
+        </div>
         <div class="info">
-          <h2>{{ userInfo.username || '游客' }}</h2>
-          <p>注册时间：{{ userInfo.regtime || '未知' }}</p>
+          <div class="name-row">
+            <h2>{{ userInfo.nickname || userInfo.username }}</h2>
+            <el-button link type="primary" @click="editProfile">编辑资料</el-button>
+          </div>
+          <p>ID: {{ userInfo.id }}</p>
+          <p>注册时间：{{ formatDate(userInfo.created_at) }}</p>
+          <p class="signature">{{ userInfo.signature || '这个人很懒，什么都没写~' }}</p>
+          <div class="user-details">
+          <span v-if="userInfo.gender" :style="{ color: genderColor }">
+            {{ genderSymbol }}
+          </span>
+          <span v-if="userInfo.birthday"> · 生日：{{ userInfo.birthday }}</span>
+          <span v-if="userInfo.province"> · 来自：{{ userInfo.province }}</span>
+         </div>
         </div>
       </div>
     </el-card>
 
-    <!-- 三个标签页 -->
+    <!-- 数据概览卡片 -->
+    <el-card class="stats-card">
+      <h3>数据概览</h3>
+      <div class="stats-grid">
+        <div class="stat-item">
+          <span class="stat-value">{{ stats.favorites }}</span>
+          <span class="stat-label">收藏</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">{{ stats.wants }}</span>
+          <span class="stat-label">想去</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">{{ stats.likes }}</span>
+          <span class="stat-label">点赞</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">{{ stats.comments }}</span>
+          <span class="stat-label">评论</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">{{ stats.publish_count }}</span>
+          <span class="stat-label">发布</span>
+        </div>
+      </div>
+    </el-card>
+
+    <!-- 标签页（简化命名） -->
     <el-tabs v-model="activeTab" class="tabs">
-      <el-tab-pane label="我的收藏" name="favorites">
-        <el-row :gutter="20">
-          <el-col :span="12" v-for="v in paginatedFavorites" :key="v.id" style="margin-bottom: 20px;">
-            <el-card class="village-card">
-              <div class="card-content" @click="goDetail(v.id)">
-                <img src="https://picsum.photos/id/104/100/100" class="village-img" />
-                <div class="info">
-                  <h3>{{ simplifyName(v.name) }}</h3>
-                  <p>{{ v.product_name || '特色产品' }}</p>
+      <el-tab-pane label="收藏" name="favorites">
+        <div class="list-container">
+          <el-row :gutter="20">
+            <el-col :span="12" v-for="v in paginatedFavorites" :key="v.id" style="margin-bottom: 20px;">
+              <el-card class="item-card" @click="goDetail(v.id)">
+                <div class="item-content">
+                  <img :src="v.image_url || defaultImage" class="item-img" />
+                  <div class="item-info">
+                    <h4>{{ simplifyName(v.name) }}</h4>
+                    <p>{{ v.product_name || '特色产品' }}</p>
+                  </div>
                 </div>
-              </div>
-              <div class="card-actions">
-                <el-button type="danger" size="small" @click.stop="removeFavorite(v.id)">取消收藏</el-button>
-              </div>
-            </el-card>
-          </el-col>
-        </el-row>
-        <div class="pagination" v-if="favoritesList.length > pageSize">
-          <el-pagination
-            v-model:current-page="favPage"
-            :page-size="pageSize"
-            :total="favoritesList.length"
-            layout="prev, pager, next"
-            @current-change="handleFavPageChange"
-          />
+                <div class="item-actions">
+                  <el-button type="danger" size="small" @click.stop="removeFavorite(v.id)">取消收藏</el-button>
+                </div>
+              </el-card>
+            </el-col>
+          </el-row>
+          <div class="pagination" v-if="favoritesList.length > pageSize">
+            <el-pagination
+              v-model:current-page="favPage"
+              :page-size="pageSize"
+              :total="favoritesList.length"
+              layout="prev, pager, next"
+              @current-change="favPageChange"
+            />
+          </div>
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="我的想去" name="wants">
+      <el-tab-pane label="想去" name="wants">
+        <!-- 结构与收藏类似，数据为 wantsList -->
         <el-row :gutter="20">
           <el-col :span="12" v-for="v in paginatedWants" :key="v.id" style="margin-bottom: 20px;">
-            <el-card class="village-card">
-              <div class="card-content" @click="goDetail(v.id)">
-                <img src="https://picsum.photos/id/104/100/100" class="village-img" />
-                <div class="info">
-                  <h3>{{ simplifyName(v.name) }}</h3>
+            <el-card class="item-card" @click="goDetail(v.id)">
+              <div class="item-content">
+                <img :src="v.image_url || defaultImage" class="item-img" />
+                <div class="item-info">
+                  <h4>{{ simplifyName(v.name) }}</h4>
                   <p>{{ v.product_name || '特色产品' }}</p>
                 </div>
               </div>
-              <div class="card-actions">
+              <div class="item-actions">
                 <el-button type="danger" size="small" @click.stop="removeWant(v.id)">取消想去</el-button>
               </div>
             </el-card>
@@ -69,23 +118,24 @@
             :page-size="pageSize"
             :total="wantsList.length"
             layout="prev, pager, next"
-            @current-change="handleWantPageChange"
+            @current-change="wantPageChange"
           />
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="我的点赞" name="likes">
+      <el-tab-pane label="点赞" name="likes">
+        <!-- 结构与收藏类似，数据为 likesList -->
         <el-row :gutter="20">
           <el-col :span="12" v-for="v in paginatedLikes" :key="v.id" style="margin-bottom: 20px;">
-            <el-card class="village-card">
-              <div class="card-content" @click="goDetail(v.id)">
-                <img src="https://picsum.photos/id/104/100/100" class="village-img" />
-                <div class="info">
-                  <h3>{{ simplifyName(v.name) }}</h3>
+            <el-card class="item-card" @click="goDetail(v.id)">
+              <div class="item-content">
+                <img :src="v.image_url || defaultImage" class="item-img" />
+                <div class="item-info">
+                  <h4>{{ simplifyName(v.name) }}</h4>
                   <p>{{ v.product_name || '特色产品' }}</p>
                 </div>
               </div>
-              <div class="card-actions">
+              <div class="item-actions">
                 <el-button type="danger" size="small" @click.stop="removeLike(v.id)">取消点赞</el-button>
               </div>
             </el-card>
@@ -97,11 +147,76 @@
             :page-size="pageSize"
             :total="likesList.length"
             layout="prev, pager, next"
-            @current-change="handleLikePageChange"
+            @current-change="likePageChange"
           />
         </div>
       </el-tab-pane>
+
+      <el-tab-pane label="评论" name="comments">
+        <div class="comment-list">
+          <div v-for="c in paginatedComments" :key="c.id" class="comment-item">
+            <div class="comment-header">
+              <strong>{{ c.village_name }}</strong>
+              <span>{{ formatDate(c.created_at) }}</span>
+            </div>
+            <div class="comment-content">{{ c.content }}</div>
+            <div class="comment-meta">👍 {{ c.like_count }}</div>
+            <el-button size="small" link @click="goDetail(c.village_id)">查看村庄</el-button>
+          </div>
+          <div class="pagination" v-if="commentsList.length > commentPageSize">
+            <el-pagination
+              v-model:current-page="commentPage"
+              :page-size="commentPageSize"
+              :total="commentsList.length"
+              layout="prev, pager, next"
+              @current-change="commentPageChange"
+            />
+          </div>
+        </div>
+      </el-tab-pane>
     </el-tabs>
+
+    <!-- 编辑资料对话框 -->
+    <el-dialog v-model="editDialogVisible" title="编辑资料" width="500px">
+      <el-form :model="editForm" label-width="80px">
+        <el-form-item label="昵称">
+          <el-input v-model="editForm.nickname" />
+        </el-form-item>
+        <el-form-item label="个性签名">
+          <el-input type="textarea" v-model="editForm.signature" rows="2" />
+        </el-form-item>
+        <el-form-item label="性别">
+          <el-radio-group v-model="editForm.gender">
+            <el-radio label="男">男</el-radio>
+            <el-radio label="女">女</el-radio>
+            <el-radio label="保密">保密</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="生日">
+          <el-date-picker v-model="editForm.birthday" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" />
+        </el-form-item>
+       <el-form-item label="地区">
+  <el-select v-model="editForm.province" placeholder="请选择省份" clearable>
+    <el-option v-for="p in provinces" :key="p" :label="p" :value="p" />
+  </el-select>
+</el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveProfile">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 头像上传裁剪对话框 -->
+    <el-dialog v-model="avatarDialogVisible" title="上传头像" width="400px">
+      <input type="file" ref="avatarInput" accept="image/*" @change="onAvatarChange" style="margin-bottom: 10px;" />
+      <div v-if="avatarPreview" class="avatar-crop-area">
+        <img :src="avatarPreview" ref="cropImage" style="max-width: 100%;" />
+      </div>
+      <div v-if="avatarPreview" class="crop-controls">
+        <el-button size="small" @click="cropAvatar">裁剪并上传</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -114,37 +229,81 @@ import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const userStore = useUserStore()
-const activeTab = ref('favorites')
+const defaultAvatar = 'https://picsum.photos/id/64/80/80'
+const defaultImage = 'https://picsum.photos/id/104/150/150'
 
 // 用户信息
 const userInfo = ref({})
+const editDialogVisible = ref(false)
+const editForm = ref({
+  nickname: '',
+  signature: '',
+  gender: '',
+  birthday: '',
+  region: []
+})
 
-// 收藏列表
+const genderSymbol = computed(() => {
+  if (userInfo.value.gender === '男') return '♂'
+  if (userInfo.value.gender === '女') return '♀'
+  return userInfo.value.gender || ''
+})
+const genderColor = computed(() => {
+  if (userInfo.value.gender === '男') return '#409eff'  // 蓝色
+  if (userInfo.value.gender === '女') return '#f56c6c'  // 红色
+  return '#909399'  // 其他性别灰色
+})
+
+// 统计数据
+const stats = ref({
+  favorites: 0,
+  wants: 0,
+  likes: 0,
+  comments: 0,
+  publish_count: 0
+})
+
+// 收藏、想去、点赞列表
 const favoritesList = ref([])
+const wantsList = ref([])
+const likesList = ref([])
+const commentsList = ref([])
+
+// 分页
+const pageSize = ref(6)
 const favPage = ref(1)
-const pageSize = ref(6) // 每页显示6条
+const wantPage = ref(1)
+const likePage = ref(1)
+const commentPage = ref(1)
+const commentPageSize = ref(5)
+
 const paginatedFavorites = computed(() => {
   const start = (favPage.value - 1) * pageSize.value
   return favoritesList.value.slice(start, start + pageSize.value)
 })
-
-// 想去列表
-const wantsList = ref([])
-const wantPage = ref(1)
 const paginatedWants = computed(() => {
   const start = (wantPage.value - 1) * pageSize.value
   return wantsList.value.slice(start, start + pageSize.value)
 })
-
-// 点赞列表
-const likesList = ref([])
-const likePage = ref(1)
 const paginatedLikes = computed(() => {
   const start = (likePage.value - 1) * pageSize.value
   return likesList.value.slice(start, start + pageSize.value)
 })
+const paginatedComments = computed(() => {
+  const start = (commentPage.value - 1) * commentPageSize.value
+  return commentsList.value.slice(start, start + commentPageSize.value)
+})
 
-// 简化村名（复用）
+const activeTab = ref('favorites')
+
+const provinces = ref([
+  '北京市', '天津市', '上海市', '重庆市', '河北省', '山西省', '辽宁省', '吉林省', '黑龙江省',
+  '江苏省', '浙江省', '安徽省', '福建省', '江西省', '山东省', '河南省', '湖北省', '湖南省',
+  '广东省', '海南省', '四川省', '贵州省', '云南省', '陕西省', '甘肃省', '青海省', '台湾省',
+  '内蒙古自治区', '广西壮族自治区', '宁夏回族自治区', '新疆维吾尔自治区', '西藏自治区'
+])
+
+// 辅助函数
 const simplifyName = (fullName) => {
   if (!fullName) return ''
   let name = fullName
@@ -154,165 +313,318 @@ const simplifyName = (fullName) => {
   if (townIdx !== -1) name = name.substring(townIdx + 1)
   return name || fullName
 }
+const formatDate = (isoString) => {
+  if (!isoString) return ''
+  return isoString.split('T')[0]
+}
 
-// 分页切换
-const handleFavPageChange = (val) => { favPage.value = val }
-const handleWantPageChange = (val) => { wantPage.value = val }
-const handleLikePageChange = (val) => { likePage.value = val }
+// 加载数据
+const loadProfile = async () => {
+  try {
+    const res = await axios.get('/api/user/profile')
+    userInfo.value = res.data
+    editForm.value = {
+      nickname: res.data.nickname || '',
+      signature: res.data.signature || '',
+      gender: res.data.gender || '',
+      birthday: res.data.birthday || '',
+      province: res.data.province || ''
+    }
+  } catch (error) {
+    console.error('加载资料失败', error)
+  }
+}
+const loadFavorites = async () => {
+  try {
+    const res = await axios.get('/api/user/favorites')
+    favoritesList.value = res.data
+  } catch (error) {
+    console.error('加载收藏失败', error)
+  }
+}
+const loadWants = async () => {
+  try {
+    const res = await axios.get('/api/user/wants')
+    wantsList.value = res.data
+  } catch (error) {
+    console.error('加载想去失败', error)
+  }
+}
+const loadLikes = async () => {
+  try {
+    const res = await axios.get('/api/user/likes')
+    likesList.value = res.data
+  } catch (error) {
+    console.error('加载点赞失败', error)
+  }
+}
+const loadComments = async () => {
+  try {
+    const res = await axios.get('/api/user/comments')
+    commentsList.value = res.data
+  } catch (error) {
+    console.error('加载评论失败', error)
+  }
+}
+const loadStats = async () => {
+  try {
+    const res = await axios.get('/api/user/stats')
+    stats.value = res.data
+  } catch (error) {
+    console.error('加载统计数据失败', error)
+  }
+}
 
-// 取消收藏
+// 编辑资料
+const editProfile = () => {
+  editDialogVisible.value = true
+}
+const saveProfile = async () => {
+  const payload = {
+    nickname: editForm.value.nickname,
+    signature: editForm.value.signature,
+    gender: editForm.value.gender,
+    birthday: editForm.value.birthday,
+    province: editForm.value.province
+  }
+  try {
+    await axios.put('/api/user/profile', payload)
+    ElMessage.success('保存成功')
+    editDialogVisible.value = false
+    loadProfile()
+  } catch (error) {
+    ElMessage.error('保存失败')
+  }
+}
+
+// 取消收藏/想去/点赞
 const removeFavorite = async (id) => {
   try {
     await axios.post(`/api/villages/${id}/unfavorite`)
     favoritesList.value = favoritesList.value.filter(v => v.id !== id)
     ElMessage.success('已取消收藏')
-    // 如果当前页没有数据了，自动回退一页
-    if (paginatedFavorites.value.length === 0 && favPage.value > 1) {
-      favPage.value--
-    }
   } catch (error) {
     ElMessage.error('操作失败')
   }
 }
-
-// 取消想去
 const removeWant = async (id) => {
   try {
     await axios.post(`/api/villages/${id}/unwant`)
     wantsList.value = wantsList.value.filter(v => v.id !== id)
     ElMessage.success('已取消想去')
-    if (paginatedWants.value.length === 0 && wantPage.value > 1) {
-      wantPage.value--
-    }
   } catch (error) {
     ElMessage.error('操作失败')
   }
 }
-
-// 取消点赞
 const removeLike = async (id) => {
   try {
     await axios.post(`/api/villages/${id}/unlike`)
     likesList.value = likesList.value.filter(v => v.id !== id)
     ElMessage.success('已取消点赞')
-    if (paginatedLikes.value.length === 0 && likePage.value > 1) {
-      likePage.value--
-    }
   } catch (error) {
     ElMessage.error('操作失败')
   }
 }
 
+// 分页切换
+const favPageChange = (val) => { favPage.value = val }
+const wantPageChange = (val) => { wantPage.value = val }
+const likePageChange = (val) => { likePage.value = val }
+const commentPageChange = (val) => { commentPage.value = val }
+
 // 跳转详情
-const goDetail = (id) => {
-  router.push(`/village/${id}`)
+const goDetail = (id) => router.push(`/village/${id}`)
+
+// 头像上传裁剪
+const avatarDialogVisible = ref(false)
+const avatarInput = ref(null)
+const avatarPreview = ref('')
+const cropImage = ref(null)
+const showAvatarUpload = () => {
+  avatarDialogVisible.value = true
+}
+const onAvatarChange = (e) => {
+  const file = e.target.files[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = (event) => {
+    avatarPreview.value = event.target.result
+  }
+  reader.readAsDataURL(file)
+}
+const cropAvatar = () => {
+  if (!cropImage.value) return
+  const img = cropImage.value
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  const size = Math.min(img.naturalWidth, img.naturalHeight)
+  const sx = (img.naturalWidth - size) / 2
+  const sy = (img.naturalHeight - size) / 2
+  canvas.width = 200
+  canvas.height = 200
+  ctx.drawImage(img, sx, sy, size, size, 0, 0, 200, 200)
+  canvas.toBlob(async (blob) => {
+    const formData = new FormData()
+    formData.append('avatar', blob, 'avatar.jpg')
+    try {
+      const res = await axios.post('/api/user/avatar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      userInfo.value.avatar = res.data.avatar_url + '?' + new Date().getTime()
+      avatarDialogVisible.value = false
+      ElMessage.success('头像上传成功')
+      await loadProfile()
+    } catch (error) {
+      ElMessage.error('上传失败')
+    }
+  }, 'image/jpeg')
 }
 
-// 加载用户个人数据
-const loadUserData = async () => {
+onMounted(() => {
   if (!userStore.token) {
     ElMessage.warning('请先登录')
     router.push('/login')
     return
   }
-  try {
-    // 获取用户信息
-    const profileRes = await axios.get('/api/user/profile')
-    userInfo.value = profileRes.data
-
-    // 获取收藏列表
-    const favRes = await axios.get('/api/user/favorites')
-    favoritesList.value = favRes.data
-
-    // 获取想去列表
-    const wantRes = await axios.get('/api/user/wants')
-    wantsList.value = wantRes.data
-
-    // 获取点赞列表
-    const likeRes = await axios.get('/api/user/likes')
-    likesList.value = likeRes.data
-  } catch (error) {
-    console.error('加载个人数据失败', error)
-    ElMessage.error('加载个人数据失败，请检查后端接口')
-    // 如果后端接口未实现，可以使用模拟数据测试
-    if (error.response?.status === 404) {
-      userInfo.value = { username: userStore.user?.username || '测试用户', regtime: '2026-01-01' }
-      favoritesList.value = []
-      wantsList.value = []
-      likesList.value = []
-    }
-  }
-}
-
-onMounted(() => {
-  loadUserData()
+  loadProfile()
+  loadFavorites()
+  loadWants()
+  loadLikes()
+  loadComments()
+  loadStats()
 })
 </script>
 
 <style scoped>
+.user-details {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #666;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .person-page {
-  padding: 20px;
-  max-width: 1200px;
+  width: 1200px;
   margin: 0 auto;
+  padding: 20px;
+  box-sizing: border-box;
+  transition: none; 
+}
+@media (max-width: 1240px) {
+  .person-page {
+    width: 100%;
+    padding: 20px;
+  }
+}
+.favorites-list .el-row,
+.wants-list .el-row,
+.likes-list .el-row {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 -10px;
+}
+.favorites-list .el-col,
+.wants-list .el-col,
+.likes-list .el-col {
+  width: 50%;
+  padding: 0 10px;
+  flex: 0 0 50%;
 }
 .header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 20px;
-  margin-bottom: 24px;
-  border-left: 5px solid #e67e22;
-  padding-left: 20px;
-}
-.header h1 {
-  font-size: 1.8rem;
-  font-weight: 600;
-  color: #2b5e2b;
+  margin-bottom: 20px;
 }
 .profile-card {
   margin-bottom: 24px;
 }
 .profile-header {
   display: flex;
-  gap: 20px;
+  gap: 24px;
   align-items: center;
 }
-.profile-header .info h2 {
-  margin: 0;
-}
-.village-card {
+.avatar-wrapper {
+  position: relative;
   cursor: pointer;
-  transition: all 0.25s ease;
-  border-radius: 24px;
-  overflow: hidden;
-  background: rgba(255, 255, 245, 0.8);
-  backdrop-filter: blur(4px);
 }
-.village-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 20px 30px -12px rgba(43, 94, 43, 0.15);
+.avatar-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  text-align: center;
+  font-size: 12px;
+  padding: 4px 0;
+  border-radius: 0 0 40px 40px;
+  opacity: 0;
+  transition: 0.2s;
 }
-.card-content {
+.avatar-wrapper:hover .avatar-overlay {
+  opacity: 1;
+}
+.name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.signature {
+  color: #888;
+  margin-top: 8px;
+}
+.stats-grid {
+  display: flex;
+  gap: 20px;
+  justify-content: space-around;
+  margin-top: 16px;
+}
+.stat-item {
+  text-align: center;
+}
+.stat-value {
+  font-size: 24px;
+  font-weight: bold;
+  display: block;
+}
+.stat-label {
+  font-size: 14px;
+  color: #666;
+}
+.item-card {
+  cursor: pointer;
+}
+.item-content {
   display: flex;
   gap: 12px;
-  padding: 12px;
 }
-.village-img {
+.item-img {
   width: 80px;
   height: 80px;
   object-fit: cover;
-  border-radius: 12px;
+  border-radius: 8px;
 }
-.info h3 {
-  margin: 0 0 4px;
-  font-size: 1rem;
-}
-.card-actions {
+.item-actions {
   text-align: right;
-  padding: 0 12px 12px 0;
+  margin-top: 8px;
+}
+.comment-item {
+  border-bottom: 1px solid #eee;
+  padding: 12px 0;
+}
+.comment-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.comment-meta {
+  font-size: 12px;
+  color: #888;
 }
 .pagination {
   margin-top: 20px;
-  display: flex;
-  justify-content: center;
+  text-align: center;
 }
 </style>

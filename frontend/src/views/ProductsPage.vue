@@ -48,15 +48,14 @@
             </div>
           </div>
 
-          <!-- 百科链接按钮组 -->
-          <div class="baike-buttons">
-            <el-button link type="primary" size="small" @click.stop="openBaike(v, 0)">
-              📖 村庄简介
-            </el-button>
-            <el-button link type="success" size="small" @click.stop="openBaike(v, 1)">
-              🛒 产品介绍
-            </el-button>
-          </div>
+         <div class="baike-buttons">
+       <el-button link type="primary" size="small" @click="openBaike(v, 0)">
+        📖 村庄简介
+     </el-button>
+  <el-button link type="success" size="small" @click="openBaike(v, 1)">
+    🛒 产品介绍
+ </el-button>
+</div>
 
           <!-- 收藏图标 -->
           <div class="card-footer">
@@ -141,10 +140,16 @@ const parseBaikeUrls = (urls) => {
   return urls.split(/[,|]/).map(u => u.trim()).filter(u => u.startsWith('http'))
 }
 
-// 打开百度百科
+// 将 baike_urls 按竖线分割成数组，过滤无效链接
+const getBaikeLinks = (urls) => {
+  if (!urls || urls === 'NaN') return []
+  return urls.split('|').filter(u => u && u.trim().startsWith('http'))
+}
+
+// 打开百科链接，index 0 = 村庄简介，1 = 产品介绍
 const openBaike = (village, index) => {
-  const urls = parseBaikeUrls(village.baike_urls)
-  const url = urls[index]
+  const links = getBaikeLinks(village.baike_urls)
+  const url = links[index]
   if (url) {
     window.open(url, '_blank')
   } else {

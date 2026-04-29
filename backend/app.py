@@ -6,6 +6,8 @@ from functools import wraps
 import pandas as pd
 from flask import Flask, jsonify, request, g
 from flask_cors import CORS
+from flask import send_from_directory
+
 
 app = Flask(__name__)
 CORS(app)
@@ -503,6 +505,17 @@ def load_villages():
             for k, v in item.items():
                 if isinstance(v, float) and math.isnan(v):
                     item[k] = None
+        # 统一 baike_urls 分隔符为竖线 |
+        import re
+        for item in villages_data:
+            urls = item.get('baike_urls')
+            if urls and isinstance(urls, str):
+                # 将所有常见分隔符（中文逗号、英文逗号、分号、顿号、空格等）替换为竖线
+                unified = re.sub(r'[，,;；、\s]+', '|', urls)
+                parts = [u.strip() for u in unified.split('|') if u.strip()]
+                item['baike_urls'] = '|'.join(parts)
+            elif urls is None:
+                item['baike_urls'] = ''
         # 应用标准化映射
         for item in villages_data:
             original_sub = item.get('sub_category', '')
@@ -529,7 +542,6 @@ def load_villages():
         villages_data = []
         provinces_data = []
         categories_data = []
-
 load_villages()
 
 # ========== 基础API（无需认证） ==========
@@ -554,7 +566,15 @@ def get_villages():
     if city:
         result = [v for v in result if v.get('city') == city]
     if keyword:
-        result = [v for v in result if keyword in str(v.get('name', '')) or keyword in str(v.get('product_name', ''))]
+         keyword_lower = keyword.lower()
+         result = [v for v in result if (
+             keyword_lower in str(v.get('name', '')).lower() or
+             keyword_lower in str(v.get('product_name', '')).lower() or
+             keyword_lower in str(v.get('province', '')).lower() or
+             keyword_lower in str(v.get('city', '')).lower() or
+             keyword_lower in str(v.get('sub_category', '')).lower() or
+             keyword_lower in str(v.get('industry_type', '')).lower()
+    )]
     return jsonify(result)
 
 @app.route('/api/villages/<int:id>', methods=['GET'])
@@ -656,9 +676,111 @@ def login():
 def get_profile():
     db = get_db()
     c = db.cursor()
-    c.execute('SELECT id, username, created_at FROM users WHERE id = ?', (request.user_id,))
+    c.execute('''
+        SELECT id, username, nickname, avatar, signature, gender, birthday,
+               province, city, district, created_at, theme_preference
+        FROM users WHERE id = ?
+    ''', (request.user_id,))
     row = c.fetchone()
+    if not row:
+        return jsonify({'error': 'User not found'}), 404
     return jsonify(dict(row))
+
+# 获取用户完整资料（含扩展字段）
+@app.route('/api/user/profile', methods=['GET'])
+@login_required
+def get_user_profile():
+    db = get_db()
+    c = db.cursor()
+    c.execute('SELECT id, username, nickname, avatar, signature, gender, birthday, province, city, district, created_at, theme_preference FROM users WHERE id = ?', (request.user_id,))
+    row = c.fetchone()
+    if not row:
+        return jsonify({'error': 'User not found'}), 404
+    return jsonify(dict(row))
+
+# 更新用户资料
+@app.route('/api/user/profile', methods=['PUT'])
+@login_required
+def update_user_profile():
+    data = request.get_json()
+    allowed_fields = ['nickname', 'avatar', 'signature', 'gender', 'birthday', 'province', 'city', 'district', 'theme_preference']
+    update_fields = {k: v for k, v in data.items() if k in allowed_fields}
+    if not update_fields:
+        return jsonify({'error': 'No valid fields'}), 400
+    set_clause = ', '.join([f"{k} = ?" for k in update_fields.keys()])
+    values = list(update_fields.values()) + [request.user_id]
+    db = get_db()
+    c = db.cursor()
+    c.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)
+    db.commit()
+    return jsonify({'message': 'Profile updated'}), 200
+
+# 上传头像
+@app.route('/api/user/avatar', methods=['POST'])
+@login_required
+def upload_avatar():
+    if 'avatar' not in request.files:
+        return jsonify({'error': 'No file'}), 400
+    file = request.files['avatar']
+    if file.filename == '':
+        return jsonify({'error': 'Empty file'}), 400
+    import os, time, uuid
+    ext = file.filename.rsplit('.', 1)[-1].lower()
+    if ext not in ['jpg', 'jpeg', 'png', 'gif']:
+        return jsonify({'error': 'Invalid format'}), 400
+    filename = f"{request.user_id}_{uuid.uuid4().hex}.{ext}"
+    save_dir = os.path.join(BASE_DIR, 'static', 'avatars')
+    os.makedirs(save_dir, exist_ok=True)
+    file.save(os.path.join(save_dir, filename))
+    avatar_url = f'/static/avatars/{filename}'
+    db = get_db()
+    c = db.cursor()
+    c.execute('UPDATE users SET avatar = ? WHERE id = ?', (avatar_url, request.user_id))
+    db.commit()
+    return jsonify({'avatar_url': avatar_url}), 200
+
+# 获取用户评论列表
+@app.route('/api/user/comments', methods=['GET'])
+@login_required
+def get_user_comments():
+    db = get_db()
+    c = db.cursor()
+    c.execute('SELECT id, village_id, content, like_count, created_at FROM comments WHERE user_id = ? ORDER BY created_at DESC', (request.user_id,))
+    rows = c.fetchall()
+    result = []
+    for row in rows:
+        village = next((v for v in villages_data if v.get('id') == row['village_id']), None)
+        result.append({
+            'id': row['id'],
+            'village_id': row['village_id'],
+            'content': row['content'],
+            'like_count': row['like_count'],
+            'created_at': row['created_at'],
+            'village_name': village.get('name') if village else '未知村庄'
+        })
+    return jsonify(result)
+
+# 获取用户统计数据
+@app.route('/api/user/stats', methods=['GET'])
+@login_required
+def get_user_stats():
+    db = get_db()
+    c = db.cursor()
+    c.execute('SELECT COUNT(*) as favorites FROM favorites WHERE user_id = ?', (request.user_id,))
+    fav = c.fetchone()['favorites']
+    c.execute('SELECT COUNT(*) as wants FROM wants WHERE user_id = ?', (request.user_id,))
+    want = c.fetchone()['wants']
+    c.execute('SELECT COUNT(*) as likes FROM village_likes WHERE user_id = ?', (request.user_id,))
+    like = c.fetchone()['likes']
+    c.execute('SELECT COUNT(*) as comments FROM comments WHERE user_id = ?', (request.user_id,))
+    comment = c.fetchone()['comments']
+    return jsonify({
+        'favorites': fav,
+        'wants': want,
+        'likes': like,
+        'comments': comment,
+        'publish_count': 0  # 预留
+    })
 
 # ========== 收藏/想去/点赞（村庄） ==========
 def get_user_village_ids(table):
@@ -927,6 +1049,10 @@ def ranking_want():
                 'want_count': row['want_count']
             })
     return jsonify(result)
+
+@app.route('/static/avatars/<path:filename>')
+def serve_avatar(filename):
+    return send_from_directory(os.path.join(BASE_DIR, 'static', 'avatars'), filename)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
